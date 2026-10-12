@@ -8,22 +8,13 @@ import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../models/history_item.dart';
 import '../providers/history_provider.dart';
+import '../services/sign_language_classifier.dart';
 import '../widgets/app_bottom_nav.dart';
 
 // ---------------------------------------------------------------------------
 // Global camera list – populated once in DetectionPage.initState
 // ---------------------------------------------------------------------------
 List<CameraDescription> _availableCameras = [];
-
-// Simulated detection results (shared by all tabs)
-final List<Map<String, dynamic>> _simulatedResults = [
-  {'gesture': 'A', 'accuracy': 0.92},
-  {'gesture': 'B', 'accuracy': 0.87},
-  {'gesture': 'M', 'accuracy': 0.96},
-  {'gesture': 'G', 'accuracy': 0.94},
-  {'gesture': 'L', 'accuracy': 0.89},
-  {'gesture': 'C', 'accuracy': 0.91},
-];
 
 /// Helper: save detection to history.
 void _saveToHistory(WidgetRef ref, String gesture, double accuracy) {
@@ -55,6 +46,8 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tabController;
   bool _camerasLoaded = false;
+  bool _modelLoaded = false;
+  bool _isDisposed = false;
 
   // ── Shared camera controller ─────────────────────────────────────────────
   CameraController? _cameraController;
@@ -68,6 +61,19 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_onTabChanged);
     _loadCameras();
+    _loadModel();
+  }
+
+  Future<void> _loadModel() async {
+    try {
+      await SignLanguageClassifier.instance.initialize();
+      if (!_isDisposed && mounted) setState(() => _modelLoaded = true);
+    } catch (e) {
+      debugPrint('Failed to load model: $e');
+      if (!_isDisposed && mounted) {
+        _showSnack('Gagal memuat model: $e');
+      }
+    }
   }
 
   Future<void> _loadCameras() async {
@@ -76,7 +82,7 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
     } catch (_) {
       _availableCameras = [];
     }
-    if (mounted) {
+    if (!_isDisposed && mounted) {
       setState(() => _camerasLoaded = true);
       // Start camera for the first tab (Video)
       if (_availableCameras.isNotEmpty) {
@@ -89,7 +95,7 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
     if (!_tabController.indexIsChanging) {
       final newIndex = _tabController.index;
       if (newIndex != _activeTabIndex) {
-        setState(() => _activeTabIndex = newIndex);
+        if (!_isDisposed && mounted) setState(() => _activeTabIndex = newIndex);
         // Tabs 0 (Video) and 1 (Photo) need camera; tab 2 (Upload) doesn't.
         if (newIndex <= 1 && !_cameraInitialized && _availableCameras.isNotEmpty) {
           _initCamera(_cameraController?.description ?? _availableCameras.first);
@@ -103,30 +109,37 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
     final old = _cameraController;
     if (old != null) {
       _cameraController = null;
-      setState(() => _cameraInitialized = false);
+      if (!_isDisposed && mounted) {
+        setState(() => _cameraInitialized = false);
+      }
       await old.dispose();
+      if (_isDisposed || !mounted) return;
     }
 
     final controller = CameraController(
       description,
-      ResolutionPreset.high,
-      enableAudio: true,
-      imageFormatGroup: ImageFormatGroup.jpeg,
+      ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup: Platform.isIOS
+          ? ImageFormatGroup.bgra8888
+          : ImageFormatGroup.yuv420,
     );
     _cameraController = controller;
 
     controller.addListener(() {
-      if (mounted) setState(() {});
+      if (!_isDisposed && mounted) setState(() {});
     });
 
     try {
       await controller.initialize();
     } on CameraException catch (e) {
-      _showSnack('Camera error: ${e.description}');
+      if (!_isDisposed && mounted) {
+        _showSnack('Camera error: ${e.description}');
+      }
       return;
     }
 
-    if (mounted) setState(() => _cameraInitialized = true);
+    if (!_isDisposed && mounted) setState(() => _cameraInitialized = true);
   }
 
   Future<void> _flipCamera() async {
@@ -150,7 +163,7 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
 
     if (state == AppLifecycleState.inactive) {
       c.dispose();
-      _cameraInitialized = false;
+      if (!_isDisposed && mounted) _cameraInitialized = false;
     } else if (state == AppLifecycleState.resumed) {
       if (_activeTabIndex <= 1) {
         _initCamera(c.description);
@@ -160,6 +173,7 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
 
   @override
   void dispose() {
+    _isDisposed = true;
     WidgetsBinding.instance.removeObserver(this);
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
@@ -178,13 +192,51 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'Detection',
-          style: TextStyle(
-            color: Color(0xFF1A1A2E),
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
+        title: Row(
+          children: [
+            const Text(
+              'Detection',
+              style: TextStyle(
+                color: Color(0xFF1A1A2E),
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Model status indicator
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: _modelLoaded
+                    ? const Color(0xFF4CAF50).withValues(alpha: 0.15)
+                    : const Color(0xFFF44336).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _modelLoaded ? Icons.check_circle : Icons.hourglass_top,
+                    size: 12,
+                    color: _modelLoaded
+                        ? const Color(0xFF4CAF50)
+                        : const Color(0xFFF44336),
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    _modelLoaded ? 'Model Ready' : 'Loading...',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: _modelLoaded
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFFF44336),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
         bottom: TabBar(
           controller: _tabController,
@@ -211,14 +263,16 @@ class _DetectionPageState extends ConsumerState<DetectionPage>
                   isInitialized: _cameraInitialized,
                   onFlip: _flipCamera,
                   ref: ref,
+                  modelReady: _modelLoaded,
                 ),
                 _PhotoDetectionTab(
                   controller: _cameraController,
                   isInitialized: _cameraInitialized,
                   onFlip: _flipCamera,
                   ref: ref,
+                  modelReady: _modelLoaded,
                 ),
-                _UploadDetectionTab(ref: ref),
+                _UploadDetectionTab(ref: ref, modelReady: _modelLoaded),
               ],
             )
           : const Center(
@@ -285,7 +339,7 @@ class _CameraPreviewFill extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tab 1 – VIDEO Detection (Real Time)
+// Tab 1 – VIDEO Detection (Real Time with TFLite)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _VideoDetectionTab extends StatefulWidget {
@@ -293,12 +347,14 @@ class _VideoDetectionTab extends StatefulWidget {
   final bool isInitialized;
   final VoidCallback onFlip;
   final WidgetRef ref;
+  final bool modelReady;
 
   const _VideoDetectionTab({
     required this.controller,
     required this.isInitialized,
     required this.onFlip,
     required this.ref,
+    required this.modelReady,
   });
 
   @override
@@ -306,93 +362,137 @@ class _VideoDetectionTab extends StatefulWidget {
 }
 
 class _VideoDetectionTabState extends State<_VideoDetectionTab> {
-  bool _isRecording = false;
+  bool _isDetecting = false;
+  bool _isDisposed = false;
 
-  // Simulated real-time detection
-  Timer? _detectionTimer;
+  // Real-time detection state
   String _detectedGesture = '';
   double _accuracy = 0.0;
   bool _showDetection = false;
+  bool _isProcessingFrame = false;
+  bool _isStreamActive = false;
 
-  // Duration counter while recording
-  int _recordingSeconds = 0;
+  // Throttle: skip frames to avoid overwhelming the model
+  DateTime _lastInference = DateTime.now();
+  static const _inferenceInterval = Duration(milliseconds: 500);
+
+  // Duration counter while detecting
+  int _detectingSeconds = 0;
   Timer? _durationTimer;
-  int _resultIndex = 0;
+
+  // Track last gesture for history dedup
+  String _lastSavedGesture = '';
 
   @override
   void dispose() {
-    _detectionTimer?.cancel();
+    _isDisposed = true;
     _durationTimer?.cancel();
+    final c = widget.controller;
+    if (c != null && _isStreamActive) {
+      try {
+        c.stopImageStream();
+      } catch (_) {}
+      _isStreamActive = false;
+    }
     super.dispose();
   }
 
-  // ── Recording control ──────────────────────────────────────────────────────
-  Future<void> _toggleRecording() async {
+  // ── Detection control ──────────────────────────────────────────────────────
+  Future<void> _toggleDetection() async {
     final c = widget.controller;
     if (c == null || !c.value.isInitialized) return;
 
-    if (_isRecording) {
-      await _stopRecording();
+    if (_isDetecting) {
+      await _stopDetection();
     } else {
-      await _startRecording();
+      await _startDetection();
     }
   }
 
-  Future<void> _startRecording() async {
-    final c = widget.controller!;
-    try {
-      await c.startVideoRecording();
-      setState(() {
-        _isRecording = true;
-        _recordingSeconds = 0;
-        _showDetection = false;
-      });
-
-      _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => _recordingSeconds++);
-      });
-
-      _detectionTimer = Timer(const Duration(seconds: 2), () {
-        _scheduleDetection();
-      });
-    } on CameraException catch (e) {
-      _showSnack('Recording error: ${e.description}');
+  Future<void> _startDetection() async {
+    final c = widget.controller;
+    if (c == null || !widget.modelReady) {
+      _showSnack('Model belum siap, tunggu sebentar...');
+      return;
     }
-  }
 
-  void _scheduleDetection() {
-    if (!_isRecording || !mounted) return;
-    final result = _simulatedResults[_resultIndex % _simulatedResults.length];
-    final gesture = result['gesture'] as String;
-    final accuracy = result['accuracy'] as double;
     setState(() {
-      _detectedGesture = gesture;
-      _accuracy = accuracy;
-      _showDetection = true;
-      _resultIndex++;
+      _isDetecting = true;
+      _detectingSeconds = 0;
+      _showDetection = false;
+      _lastSavedGesture = '';
     });
 
-    _saveToHistory(widget.ref, gesture, accuracy);
-    _detectionTimer = Timer(const Duration(seconds: 2), _scheduleDetection);
+    _durationTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!_isDisposed && mounted) setState(() => _detectingSeconds++);
+    });
+
+    // Start the camera image stream for real-time inference
+    try {
+      _isStreamActive = true;
+      await c.startImageStream(_onCameraFrame);
+    } catch (e) {
+      if (!_isDisposed && mounted) {
+        _showSnack('Gagal memulai stream kamera: $e');
+        setState(() => _isDetecting = false);
+      }
+    }
   }
 
-  Future<void> _stopRecording() async {
-    _detectionTimer?.cancel();
+  void _onCameraFrame(CameraImage image) {
+    if (_isDisposed || !_isDetecting || !mounted || _isProcessingFrame) return;
+
+    // Throttle inference
+    final now = DateTime.now();
+    if (now.difference(_lastInference) < _inferenceInterval) return;
+    _lastInference = now;
+    _isProcessingFrame = true;
+
+    _runInference(image);
+  }
+
+  Future<void> _runInference(CameraImage image) async {
+    try {
+      final result = await SignLanguageClassifier.instance
+          .classifyCameraImage(image);
+
+      if (!_isDisposed && mounted && _isDetecting && result != null) {
+        setState(() {
+          _detectedGesture = result.gesture;
+          _accuracy = result.confidence;
+          _showDetection = true;
+        });
+
+        // Save to history only when gesture changes
+        if (result.gesture != _lastSavedGesture) {
+          _lastSavedGesture = result.gesture;
+          _saveToHistory(widget.ref, result.gesture, result.confidence);
+        }
+      }
+    } catch (_) {
+      // Silently ignore inference errors for individual frames
+    } finally {
+      _isProcessingFrame = false;
+    }
+  }
+
+  Future<void> _stopDetection() async {
     _durationTimer?.cancel();
 
     final c = widget.controller;
-    if (c != null) {
+    if (c != null && _isStreamActive) {
       try {
-        await c.stopVideoRecording();
-      } on CameraException catch (e) {
-        _showSnack('Stop error: ${e.description}');
-      }
+        await c.stopImageStream();
+      } catch (_) {}
+      _isStreamActive = false;
     }
 
-    setState(() {
-      _isRecording = false;
-      _recordingSeconds = 0;
-    });
+    if (!_isDisposed && mounted) {
+      setState(() {
+        _isDetecting = false;
+        _detectingSeconds = 0;
+      });
+    }
   }
 
   void _showSnack(String msg) {
@@ -440,7 +540,7 @@ class _VideoDetectionTabState extends State<_VideoDetectionTab> {
                 ),
 
               // Flip camera button – top left
-              if (canFlip && !_isRecording)
+              if (canFlip && !_isDetecting)
                 Positioned(
                   top: 12,
                   left: 12,
@@ -451,8 +551,8 @@ class _VideoDetectionTabState extends State<_VideoDetectionTab> {
                   ),
                 ),
 
-              // Recording badge – top right
-              if (_isRecording)
+              // Detecting badge – top right
+              if (_isDetecting)
                 Positioned(
                   top: 12,
                   right: 12,
@@ -460,17 +560,16 @@ class _VideoDetectionTabState extends State<_VideoDetectionTab> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.red.withValues(alpha: 0.85),
+                      color: const Color(0xFF2E7D32).withValues(alpha: 0.85),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.circle,
-                            color: Colors.white, size: 10),
+                        const _PulsingDot(color: Colors.white, size: 10),
                         const SizedBox(width: 6),
                         Text(
-                          'REC  ${_formatDuration(_recordingSeconds)}',
+                          'LIVE  ${_formatDuration(_detectingSeconds)}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,
@@ -505,7 +604,7 @@ class _VideoDetectionTabState extends State<_VideoDetectionTab> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               GestureDetector(
-                onTap: _toggleRecording,
+                onTap: _toggleDetection,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   width: 68,
@@ -513,10 +612,10 @@ class _VideoDetectionTabState extends State<_VideoDetectionTab> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color:
-                        _isRecording ? Colors.red : const Color(0xFF2E7D32),
+                        _isDetecting ? Colors.red : const Color(0xFF2E7D32),
                     boxShadow: [
                       BoxShadow(
-                        color: (_isRecording
+                        color: (_isDetecting
                                 ? Colors.red
                                 : const Color(0xFF2E7D32))
                             .withValues(alpha: 0.4),
@@ -526,7 +625,7 @@ class _VideoDetectionTabState extends State<_VideoDetectionTab> {
                     ],
                   ),
                   child: Icon(
-                    _isRecording ? Icons.stop_rounded : Icons.videocam,
+                    _isDetecting ? Icons.stop_rounded : Icons.videocam,
                     color: Colors.white,
                     size: 32,
                   ),
@@ -541,7 +640,7 @@ class _VideoDetectionTabState extends State<_VideoDetectionTab> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tab 2 – PHOTO Detection
+// Tab 2 – PHOTO Detection (with TFLite)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _PhotoDetectionTab extends StatefulWidget {
@@ -549,12 +648,14 @@ class _PhotoDetectionTab extends StatefulWidget {
   final bool isInitialized;
   final VoidCallback onFlip;
   final WidgetRef ref;
+  final bool modelReady;
 
   const _PhotoDetectionTab({
     required this.controller,
     required this.isInitialized,
     required this.onFlip,
     required this.ref,
+    required this.modelReady,
   });
 
   @override
@@ -570,7 +671,6 @@ class _PhotoDetectionTabState extends State<_PhotoDetectionTab> {
   // Detection result
   String? _detectedGesture;
   double? _accuracy;
-  int _resultIndex = 0;
 
   // ── Take photo ─────────────────────────────────────────────────────────
   Future<void> _takePhoto() async {
@@ -581,6 +681,7 @@ class _PhotoDetectionTabState extends State<_PhotoDetectionTab> {
       final isFront =
           c.description.lensDirection == CameraLensDirection.front;
       final xFile = await c.takePicture();
+      if (!mounted) return;
       setState(() {
         _capturedPhoto = File(xFile.path);
         _wasFrontCamera = isFront;
@@ -588,36 +689,48 @@ class _PhotoDetectionTabState extends State<_PhotoDetectionTab> {
         _accuracy = null;
       });
     } on CameraException catch (e) {
-      _showSnack('Gagal mengambil foto: ${e.description}');
+      if (mounted) _showSnack('Gagal mengambil foto: ${e.description}');
     }
   }
 
-  // ── Run detection on captured photo ────────────────────────────────────
+  // ── Run detection on captured photo using real model ────────────────────
   Future<void> _runDetection() async {
     if (_capturedPhoto == null) {
       _showSnack('Ambil foto terlebih dahulu');
       return;
     }
 
+    if (!widget.modelReady) {
+      _showSnack('Model belum siap, tunggu sebentar...');
+      return;
+    }
+
     setState(() => _isDetecting = true);
 
-    // Simulate ML inference delay
-    await Future.delayed(const Duration(milliseconds: 800));
+    try {
+      final result = await SignLanguageClassifier.instance
+          .classifyImageFile(_capturedPhoto!);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    final result = _simulatedResults[_resultIndex % _simulatedResults.length];
-    final gesture = result['gesture'] as String;
-    final accuracy = result['accuracy'] as double;
+      if (result != null) {
+        setState(() {
+          _detectedGesture = result.gesture;
+          _accuracy = result.confidence;
+          _isDetecting = false;
+        });
 
-    setState(() {
-      _detectedGesture = gesture;
-      _accuracy = accuracy;
-      _isDetecting = false;
-      _resultIndex++;
-    });
-
-    _saveToHistory(widget.ref, gesture, accuracy);
+        _saveToHistory(widget.ref, result.gesture, result.confidence);
+      } else {
+        setState(() => _isDetecting = false);
+        _showSnack('Gagal mendeteksi gesture. Coba ambil foto lebih jelas.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDetecting = false);
+        _showSnack('Error saat deteksi: $e');
+      }
+    }
   }
 
   // ── Reset to camera ────────────────────────────────────────────────────
@@ -702,8 +815,21 @@ class _PhotoDetectionTabState extends State<_PhotoDetectionTab> {
                 Container(
                   color: Colors.black26,
                   child: const Center(
-                    child:
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         CircularProgressIndicator(color: Color(0xFF2E7D32)),
+                        SizedBox(height: 12),
+                        Text(
+                          'Mendeteksi gesture...',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -793,12 +919,13 @@ class _PhotoDetectionTabState extends State<_PhotoDetectionTab> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Tab 3 – UPLOAD Detection (WeChat Assets Picker)
+// Tab 3 – UPLOAD Detection (WeChat Assets Picker + TFLite)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class _UploadDetectionTab extends StatefulWidget {
   final WidgetRef ref;
-  const _UploadDetectionTab({required this.ref});
+  final bool modelReady;
+  const _UploadDetectionTab({required this.ref, required this.modelReady});
 
   @override
   State<_UploadDetectionTab> createState() => _UploadDetectionTabState();
@@ -812,7 +939,6 @@ class _UploadDetectionTabState extends State<_UploadDetectionTab> {
   // Detection result – null until user clicks Detect
   String? _detectedGesture;
   double? _accuracy;
-  int _resultIndex = 0;
 
   Future<void> _pickAsset() async {
     setState(() => _isLoading = true);
@@ -825,6 +951,7 @@ class _UploadDetectionTabState extends State<_UploadDetectionTab> {
           textDelegate: EnglishAssetPickerTextDelegate(),
         ),
       );
+      if (!mounted) return;
       if (assets != null && assets.isNotEmpty) {
         setState(() {
           _pickedAsset = assets.first;
@@ -833,7 +960,7 @@ class _UploadDetectionTabState extends State<_UploadDetectionTab> {
         });
       }
     } catch (e) {
-      _showSnack('Gagal memilih file: $e');
+      if (mounted) _showSnack('Gagal memilih file: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -845,24 +972,47 @@ class _UploadDetectionTabState extends State<_UploadDetectionTab> {
       return;
     }
 
+    if (!widget.modelReady) {
+      _showSnack('Model belum siap, tunggu sebentar...');
+      return;
+    }
+
     setState(() => _isDetecting = true);
 
-    await Future.delayed(const Duration(milliseconds: 1000));
+    try {
+      // Get the file from the picked asset
+      final file = await _pickedAsset!.file;
+      if (file == null) {
+        if (mounted) {
+          setState(() => _isDetecting = false);
+          _showSnack('Gagal membaca file');
+        }
+        return;
+      }
 
-    if (!mounted) return;
+      final result = await SignLanguageClassifier.instance
+          .classifyImageFile(file);
 
-    final result = _simulatedResults[_resultIndex % _simulatedResults.length];
-    final gesture = result['gesture'] as String;
-    final accuracy = result['accuracy'] as double;
+      if (!mounted) return;
 
-    setState(() {
-      _detectedGesture = gesture;
-      _accuracy = accuracy;
-      _isDetecting = false;
-      _resultIndex++;
-    });
+      if (result != null) {
+        setState(() {
+          _detectedGesture = result.gesture;
+          _accuracy = result.confidence;
+          _isDetecting = false;
+        });
 
-    _saveToHistory(widget.ref, gesture, accuracy);
+        _saveToHistory(widget.ref, result.gesture, result.confidence);
+      } else {
+        setState(() => _isDetecting = false);
+        _showSnack('Gagal mendeteksi gesture. Coba gambar yang lebih jelas.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDetecting = false);
+        _showSnack('Error saat deteksi: $e');
+      }
+    }
   }
 
   void _clearSelection() {
@@ -954,8 +1104,21 @@ class _UploadDetectionTabState extends State<_UploadDetectionTab> {
                 Container(
                   color: Colors.black26,
                   child: const Center(
-                    child:
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         CircularProgressIndicator(color: Color(0xFF2E7D32)),
+                        SizedBox(height: 12),
+                        Text(
+                          'Mendeteksi gesture...',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -1081,6 +1244,50 @@ class _CircleIconButton extends StatelessWidget {
   }
 }
 
+/// Pulsing dot indicator for live detection mode.
+class _PulsingDot extends StatefulWidget {
+  final Color color;
+  final double size;
+
+  const _PulsingDot({required this.color, required this.size});
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.3, end: 1.0).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (_, _) => Opacity(
+        opacity: _animation.value,
+        child: Icon(Icons.circle, color: widget.color, size: widget.size),
+      ),
+    );
+  }
+}
+
 class _DetectionResultCard extends StatelessWidget {
   final String gesture;
   final double accuracy;
@@ -1121,7 +1328,7 @@ class _DetectionResultCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Accuracy ${(accuracy * 100).toStringAsFixed(0)}%',
+            'Accuracy ${(accuracy * 100).toStringAsFixed(1)}%',
             style: const TextStyle(fontSize: 12, color: Color(0xFF757575)),
           ),
           if (showProgressBar) ...[
