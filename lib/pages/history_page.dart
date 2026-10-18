@@ -20,9 +20,14 @@ class HistoryPage extends ConsumerWidget {
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         backgroundColor: Colors.white,
+        elevation: 0,
         title: const Text(
           'Riwayat',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Color(0xFF1A1A2E),
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
         ),
         actions: [
           IconButton(
@@ -264,7 +269,6 @@ class _HistoryItemTile extends StatelessWidget {
       'video' => Icons.videocam_outlined,
       'photo' => Icons.camera_alt_outlined,
       'upload' => Icons.photo_library_outlined,
-      'target' => Icons.sign_language_outlined,
       _ => Icons.history,
     };
     return Dismissible(

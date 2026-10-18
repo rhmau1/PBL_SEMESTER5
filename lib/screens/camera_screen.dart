@@ -14,7 +14,7 @@ import '../models/sign_prediction.dart';
 import '../services/camera_preview_size.dart';
 import '../services/image_preprocessor.dart';
 import '../services/sign_classifier.dart';
-import '../widgets/full_bleed_camera_preview.dart';
+import '../widgets/session_result_sheet.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({
@@ -38,6 +38,8 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
+  static const Color _homeGreen = Color(0xFF2E7D32);
+
   static const _handDetectionInterval = Duration(milliseconds: 320);
   static const _analysisInterval = Duration(milliseconds: 260);
   static const _minimumConfidence = 0.60;
@@ -91,8 +93,6 @@ class _CameraScreenState extends State<CameraScreen>
   bool _appIsActive = true;
   int _cameraGeneration = 0;
   int _photoGeneration = 0;
-  // Native camera resources belong to the app, even when navigation destroys
-  // this State. A new screen must wait for the old controller's disposal.
   static Future<void>? _cameraLifecycleQueue;
 
   bool get _isAnalysisActive => _isSessionActive || _isTargetAnalysisActive;
@@ -187,7 +187,6 @@ class _CameraScreenState extends State<CameraScreen>
     final result = previous == null
         ? Future<T>.sync(operation)
         : previous.then((_) => operation());
-    // A failed initialization must not block the next retry or disposal.
     final completion = result.then<void>((_) {}).catchError((Object _) {});
     _cameraLifecycleQueue = completion;
     unawaited(
@@ -207,7 +206,7 @@ class _CameraScreenState extends State<CameraScreen>
       if (!_isCurrentCameraRequest(generation)) return;
       final controller = CameraController(
         description,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.yuv420,
       );
@@ -217,8 +216,6 @@ class _CameraScreenState extends State<CameraScreen>
           await controller.dispose();
           return;
         }
-        // Lock the camera as well as the app UI. Otherwise preview and recording
-        // may select different orientations even while the screen stays portrait.
         await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
       } catch (_) {
         await controller.dispose();
@@ -228,8 +225,10 @@ class _CameraScreenState extends State<CameraScreen>
         await controller.dispose();
         return;
       }
-      setState(() => _controller = controller);
       await _refreshPreviewSize(controller);
+      if (mounted) {
+        setState(() => _controller = controller);
+      }
       if (!widget.photoMode && _selectedTarget.isNotEmpty) {
         await _startTargetAnalysis(resetResults: false);
       }
@@ -338,8 +337,9 @@ class _CameraScreenState extends State<CameraScreen>
             !identical(controller, _controller)) {
           throw StateError('Kamera tidak lagi aktif.');
         }
-        await controller.startVideoRecording(onAvailable: _onCameraFrame);
-        await _refreshPreviewSize(controller);
+        if (!controller.value.isStreamingImages) {
+          await controller.startImageStream(_onCameraFrame);
+        }
       });
     } catch (error) {
       if (mounted) {
@@ -423,7 +423,6 @@ class _CameraScreenState extends State<CameraScreen>
         setState(() => _resetRecognitionState(clearTargetResults: true));
       }
       await controller.startImageStream(_onCameraFrame);
-      await _refreshPreviewSize(controller);
       if (!mounted || controller != _controller) return;
       if (_selectedTarget.isEmpty) {
         await controller.stopImageStream();
@@ -449,7 +448,6 @@ class _CameraScreenState extends State<CameraScreen>
     if (controller == null || !controller.value.isStreamingImages) return;
     try {
       await controller.stopImageStream();
-      await _refreshPreviewSize(controller);
     } catch (error) {
       if (mounted) _showMessage('Deteksi otomatis gagal dihentikan: $error');
     }
@@ -530,10 +528,6 @@ class _CameraScreenState extends State<CameraScreen>
     _isProcessingFrame = true;
     final analysisGeneration = _analysisGeneration;
 
-    // CameraPreview mirrors the front camera for the user, but the raw image
-    // stream and MediaPipe landmarks are not mirrored. The ASL model was also
-    // trained in that canonical orientation: mirroring a clear C makes it
-    // predict P. Keep the model input unmirrored for both camera lenses.
     const mirrorForModel = false;
     _lastFrameWidth = cameraImage.width;
     _lastFrameHeight = cameraImage.height;
@@ -695,8 +689,6 @@ class _CameraScreenState extends State<CameraScreen>
         ? 0.0
         : _sessionConfidences.reduce((a, b) => a + b) /
               _sessionConfidences.length;
-    // Freeze accepted letters immediately. In-flight inference cannot append
-    // a letter after Stop or create a second history record.
     setState(() {
       _isEndingSession = true;
       _isSessionActive = false;
@@ -708,15 +700,13 @@ class _CameraScreenState extends State<CameraScreen>
         if (!identical(controller, _controller)) return;
         if (controller?.value.isRecordingVideo ?? false) {
           final recording = await controller!.stopVideoRecording();
-          await _refreshPreviewSize(controller);
           videoPath = await _saveRecording(recording);
         } else if (controller?.value.isStreamingImages ?? false) {
           await controller!.stopImageStream();
-          await _refreshPreviewSize(controller);
         }
       });
     } catch (error) {
-      if (mounted) _showMessage('Rekaman video gagal disimpan: $error');
+      if (mounted) _showMessage('Sesi gagal dihentikan: $error');
     }
     if (mounted) {
       setState(() {
@@ -761,8 +751,6 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isTakingPhoto = true);
     widget.onBusyChanged?.call(true);
     try {
-      // CameraPreview mirrors the front lens. takePicture retains the
-      // canonical sensor image; do not flip it before model inference.
       final picture = await _queueCameraLifecycle(() async {
         if (!mounted || !_appIsActive || !identical(controller, _controller)) {
           throw StateError('Kamera tidak lagi aktif.');
@@ -805,9 +793,6 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isClassifyingPhoto = true);
     widget.onBusyChanged?.call(true);
     try {
-      // classifyFile decodes EXIF orientation before grayscale/resizing.
-      // This plugin exposes MediaPipe only for live CameraImage frames;
-      // a still image is never given stale landmarks from another frame.
       final prediction =
           _photoPrediction ?? await SignClassifier.instance.classifyFile(path);
       if (!mounted || generation != _photoGeneration) return;
@@ -867,93 +852,18 @@ class _CameraScreenState extends State<CameraScreen>
     final displayedPredictions = target.isEmpty
         ? _sessionLetters
         : _validationPredictions;
-    final sequence = displayedPredictions.join();
-    final validationTotal = _validationPredictions.length;
-    final validationCorrect = target.isEmpty
-        ? 0
-        : _validationPredictions.where((label) => label == target).length;
-    final validationAccuracy = validationTotal == 0
-        ? 0.0
-        : validationCorrect / validationTotal * 100;
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.task_alt_rounded,
-                  size: 52,
-                  color: Color(0xFF0D5C46),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  target.isEmpty ? 'Hasil sesi' : 'Hasil uji target $target',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  sequence.isEmpty ? 'Belum ada huruf yang stabil.' : sequence,
-                  textAlign: TextAlign.center,
-                  style: sequence.isEmpty
-                      ? Theme.of(context).textTheme.bodyLarge
-                      : Theme.of(context).textTheme.displayMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 6,
-                        ),
-                ),
-                if (displayedPredictions.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    target.isEmpty
-                        ? '${displayedPredictions.length} huruf dikenali tanpa spasi'
-                        : '${displayedPredictions.length} percobaan stabil direkam',
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    alignment: WrapAlignment.center,
-                    children: displayedPredictions
-                        .map((letter) => Chip(label: Text(letter)))
-                        .toList(),
-                  ),
-                ],
-                if (target.isNotEmpty) ...[
-                  const SizedBox(height: 18),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE0EFE9),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      validationTotal == 0
-                          ? 'Validasi target $target: belum ada prediksi stabil.'
-                          : 'Validasi target $target: $validationCorrect/$validationTotal benar (${validationAccuracy.toStringAsFixed(1)}%).',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                Text(
-                  _savedVideoPath == null
-                      ? 'Video tidak berhasil disimpan.'
-                      : 'Video tersimpan di:\n$_savedVideoPath',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-        ),
+      useSafeArea: true,
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width,
+      ),
+      builder: (context) => SessionResultSheet(
+        letters: displayedPredictions,
+        target: target,
+        savedVideoPath: _savedVideoPath,
       ),
     );
   }
@@ -1077,7 +987,8 @@ class _CameraScreenState extends State<CameraScreen>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _buildCameraPreview(),
+          // 1. Preview Kamera Full Screen / Full Bleed di Latar Belakang
+          _buildCameraFullBleedPreview(),
           const IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -1095,12 +1006,13 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
           ),
+          // 2. Elemen UI yang posisinya diturunkan ke area bawah (mendekati area kuning)
           SafeArea(
             minimum: EdgeInsets.fromLTRB(
               16,
-              MediaQuery.paddingOf(context).top + 12 + widget.topOverlayHeight,
+              MediaQuery.paddingOf(context).top + 8 + widget.topOverlayHeight,
               16,
-              102,
+              24, // Padding bawah diperkecil agar tombol turun ke bawah
             ),
             child: Column(
               children: [
@@ -1114,7 +1026,7 @@ class _CameraScreenState extends State<CameraScreen>
                             'Kamera Latihan',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 24,
+                              fontSize: 22,
                               fontWeight: FontWeight.w900,
                               letterSpacing: -0.5,
                             ),
@@ -1123,7 +1035,7 @@ class _CameraScreenState extends State<CameraScreen>
                             'Tangan boleh di mana saja dalam frame',
                             style: TextStyle(
                               color: Color(0xFFDDE8E3),
-                              fontSize: 12,
+                              fontSize: 11,
                             ),
                           ),
                         ],
@@ -1143,7 +1055,7 @@ class _CameraScreenState extends State<CameraScreen>
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(child: _buildModeSelector()),
@@ -1154,7 +1066,7 @@ class _CameraScreenState extends State<CameraScreen>
                     ),
                   ],
                 ),
-                const Spacer(),
+                const Spacer(), // Mendorong bagian bawah (kartu status & tombol mulai) turun ke area bawah
                 _LiveResultCard(
                   active: _isAnalysisActive,
                   handDetected: _handDetected,
@@ -1164,15 +1076,15 @@ class _CameraScreenState extends State<CameraScreen>
                   latestConfidence: _latestTargetConfidence,
                   correctCount: validationCorrect,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
-                  height: 58,
+                  height: 56,
                   child: isTargetMode
                       ? FilledButton.icon(
                           style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFE6A23C),
-                            foregroundColor: const Color(0xFF1A160D),
+                            backgroundColor: _homeGreen,
+                            foregroundColor: Colors.white,
                           ),
                           onPressed: _resetTargetResults,
                           icon: const Icon(Icons.refresh_rounded),
@@ -1194,8 +1106,12 @@ class _CameraScreenState extends State<CameraScreen>
                         )
                       : FilledButton.icon(
                           style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF16A374),
+                            backgroundColor: _homeGreen,
                             foregroundColor: Colors.white,
+                            disabledBackgroundColor: _homeGreen.withValues(
+                              alpha: 0.5,
+                            ),
+                            disabledForegroundColor: Colors.white70,
                           ),
                           onPressed:
                               (_controller?.value.isInitialized ?? false) &&
@@ -1233,12 +1149,12 @@ class _CameraScreenState extends State<CameraScreen>
         fit: StackFit.expand,
         children: [
           if (path == null)
-            _buildCameraPreview()
+            _buildCameraFullBleedPreview()
           else
             Image.file(
               File(path),
               key: ValueKey(path),
-              fit: BoxFit.contain,
+              fit: BoxFit.cover,
               errorBuilder: (_, error, stackTrace) => const Center(
                 child: Text(
                   'Foto tidak dapat dibuka.',
@@ -1265,9 +1181,9 @@ class _CameraScreenState extends State<CameraScreen>
           SafeArea(
             minimum: EdgeInsets.fromLTRB(
               16,
-              MediaQuery.paddingOf(context).top + 12 + widget.topOverlayHeight,
+              MediaQuery.paddingOf(context).top + 8 + widget.topOverlayHeight,
               16,
-              102,
+              24,
             ),
             child: Column(
               children: [
@@ -1281,7 +1197,7 @@ class _CameraScreenState extends State<CameraScreen>
                             'Foto Isyarat',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 24,
+                              fontSize: 22,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
@@ -1289,7 +1205,7 @@ class _CameraScreenState extends State<CameraScreen>
                             'Satu foto untuk satu huruf',
                             style: TextStyle(
                               color: Color(0xFFDDE8E3),
-                              fontSize: 12,
+                              fontSize: 11,
                             ),
                           ),
                         ],
@@ -1357,8 +1273,16 @@ class _CameraScreenState extends State<CameraScreen>
                 if (path == null)
                   SizedBox(
                     width: double.infinity,
-                    height: 58,
+                    height: 56,
                     child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _homeGreen,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: _homeGreen.withValues(
+                          alpha: 0.5,
+                        ),
+                        disabledForegroundColor: Colors.white70,
+                      ),
                       onPressed:
                           !busy && (_controller?.value.isInitialized ?? false)
                           ? _takePhoto
@@ -1376,7 +1300,7 @@ class _CameraScreenState extends State<CameraScreen>
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
-                            minimumSize: const Size(0, 58),
+                            minimumSize: const Size(0, 56),
                           ),
                           onPressed: busy ? null : _retakePhoto,
                           icon: const Icon(Icons.refresh_rounded),
@@ -1389,7 +1313,9 @@ class _CameraScreenState extends State<CameraScreen>
                         Expanded(
                           child: FilledButton.icon(
                             style: FilledButton.styleFrom(
-                              minimumSize: const Size(0, 58),
+                              backgroundColor: _homeGreen,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(0, 56),
                             ),
                             onPressed: busy ? null : _detectPhoto,
                             icon: const Icon(Icons.sign_language_rounded),
@@ -1460,7 +1386,8 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  Widget _buildCameraPreview() {
+  // Widget untuk menampilkan preview kamera secara Full Screen / Full Bleed (seperti contoh gambar kedua)
+  Widget _buildCameraFullBleedPreview() {
     if (!widget.cameraEnabled) {
       return const Center(
         child: Text(
@@ -1470,9 +1397,7 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
     if (_isInitializing) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF65E6A7)),
-      );
+      return const Center(child: CircularProgressIndicator(color: _homeGreen));
     }
     if (_cameraError != null) {
       return Center(
@@ -1512,7 +1437,23 @@ class _CameraScreenState extends State<CameraScreen>
         ),
       );
     }
-    return FullBleedCameraPreview(controller: controller);
+
+    // Membuat preview kamera mengisi seluruh layar (Full Screen / Full Bleed)
+    return OverflowBox(
+      alignment: Alignment.center,
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width:
+              controller.value.previewSize?.height ??
+              MediaQuery.of(context).size.width,
+          height:
+              controller.value.previewSize?.width ??
+              MediaQuery.of(context).size.height,
+          child: CameraPreview(controller),
+        ),
+      ),
+    );
   }
 }
 
@@ -1631,7 +1572,7 @@ class _LiveResultCard extends StatelessWidget {
               height: 62,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.14),
+                color: const Color(0xFF2E7D32).withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Text(

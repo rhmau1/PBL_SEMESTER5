@@ -50,29 +50,6 @@ class ImagePreprocessor {
     return img.bakeOrientation(decoded);
   }
 
-  static img.Image cameraImageToGray(
-    CameraImage cameraImage, {
-    required int rotationDegrees,
-    required bool mirrorHorizontally,
-    Rect? normalizedCrop,
-  }) {
-    final sensorGray = switch (cameraImage.format.group) {
-      ImageFormatGroup.yuv420 ||
-      ImageFormatGroup.nv21 => _luminancePlaneToImage(cameraImage),
-      ImageFormatGroup.bgra8888 => _bgraToGray(cameraImage),
-      _ => throw UnsupportedError(
-        'Format kamera ${cameraImage.format.group.name} belum didukung.',
-      ),
-    };
-
-    return cropAndOrientSensorImage(
-      sensorGray,
-      rotationDegrees: rotationDegrees,
-      mirrorHorizontally: mirrorHorizontally,
-      normalizedCrop: normalizedCrop,
-    );
-  }
-
   static CameraFrameCrops cameraImageToGrayCrops(
     CameraImage cameraImage, {
     required int rotationDegrees,
@@ -510,25 +487,6 @@ class ImagePreprocessor {
       paddingScale: _tightPaddingScale,
       minimumSideFraction: _tightMinimumSideFraction,
     );
-  }
-
-  static img.Image _luminancePlaneToImage(CameraImage cameraImage) {
-    final plane = cameraImage.planes.first;
-    final pixelStride = plane.bytesPerPixel ?? 1;
-    final output = img.Image(
-      width: cameraImage.width,
-      height: cameraImage.height,
-      numChannels: 1,
-    );
-
-    for (var y = 0; y < cameraImage.height; y++) {
-      final rowOffset = y * plane.bytesPerRow;
-      for (var x = 0; x < cameraImage.width; x++) {
-        final value = plane.bytes[rowOffset + (x * pixelStride)];
-        output.setPixelR(x, y, value);
-      }
-    }
-    return output;
   }
 
   static img.Image _bgraToGray(CameraImage cameraImage) {

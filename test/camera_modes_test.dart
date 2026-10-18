@@ -317,14 +317,19 @@ void main() {
               body: CameraScreen(
                 cameraEnabled: false,
                 photoMode: photoMode,
-                topOverlayHeight: 52,
+                topOverlayHeight: detectionOverlayHeight,
               ),
             ),
           ),
         ),
       );
       final title = find.text(photoMode ? 'Foto Isyarat' : 'Kamera Latihan');
-      expect(tester.getTopLeft(title).dy, greaterThanOrEqualTo(24 + 52 + 12));
+      expect(
+        tester.getTopLeft(title).dy,
+        greaterThanOrEqualTo(
+          24 + detectionOverlayGap + detectionOverlayHeight,
+        ),
+      );
     }
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
