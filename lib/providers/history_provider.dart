@@ -1,16 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/history_item.dart';
 import '../services/database_helper.dart';
-
-final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
-  throw UnimplementedError(
-    'sharedPreferencesProvider harus di-override di ProviderScope.',
-  );
-});
 
 final historyStoreProvider = Provider<HistoryStore>(
   (ref) => DatabaseHelper.instance,

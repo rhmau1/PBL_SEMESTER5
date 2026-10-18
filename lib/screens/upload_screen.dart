@@ -147,7 +147,7 @@ class _UploadScreenState extends State<UploadScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Pilih satu atau banyak foto tangan. Setiap gambar diuji sebagai satu huruf.',
+                  'Pilih satu gambar untuk diuji sebagai satu huruf, atau beberapa gambar sekaligus untuk diuji berurutan.',
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -158,6 +158,10 @@ class _UploadScreenState extends State<UploadScreen> {
                   children: [
                     Expanded(
                       child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF2E7D32),
+                          foregroundColor: Colors.white,
+                        ),
                         onPressed: _isProcessing
                             ? null
                             : () => _pickAndClassify(false),

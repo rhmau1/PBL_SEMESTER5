@@ -6,13 +6,11 @@ class AppBottomNav extends StatelessWidget {
     required this.currentIndex,
     required this.onSelected,
     this.enabled = true,
-    this.cameraOverlay = false,
   });
 
   final int currentIndex;
   final ValueChanged<int> onSelected;
   final bool enabled;
-  final bool cameraOverlay;
 
   @override
   Widget build(BuildContext context) {
@@ -20,13 +18,9 @@ class AppBottomNav extends StatelessWidget {
       currentIndex: currentIndex,
       onTap: enabled ? onSelected : null,
       type: BottomNavigationBarType.fixed,
-      selectedItemColor: cameraOverlay
-          ? const Color(0xFF80DB91)
-          : const Color(0xFF2E7D32),
-      unselectedItemColor: cameraOverlay
-          ? Colors.white70
-          : const Color(0xFF757575),
-      backgroundColor: cameraOverlay ? const Color(0xEB101714) : Colors.white,
+      selectedItemColor: const Color(0xFF2E7D32),
+      unselectedItemColor: const Color(0xFF757575),
+      backgroundColor: Colors.white,
       elevation: 8,
       selectedLabelStyle: const TextStyle(
         fontSize: 11,
@@ -49,7 +43,11 @@ class AppBottomNav extends StatelessWidget {
           activeIcon: Icon(Icons.menu_book),
           label: 'Kamus',
         ),
-        BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Riwayat'),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.history_outlined),
+          activeIcon: Icon(Icons.history),
+          label: 'Riwayat',
+        ),
       ],
     );
   }

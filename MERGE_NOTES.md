@@ -1,14 +1,15 @@
 # PBL Semester 5 — LatihIsyarat
 
 Aplikasi Flutter untuk latihan ejaan jari ASL. Project aktif berada langsung
-di root repository `D:\PBL_SEMESTER5`. Repository ini menggabungkan beranda,
-navigasi, dan riwayat dari `rhmau1/PBL_SEMESTER5` dengan kamera, crop tangan,
-model, dan kamus foto dari project `PBL-BAHASA-ISYARAT`.
+di root repository `~/Documents/rhma2026/PBL_SEMESTER5`. Repository ini
+menggabungkan beranda, navigasi, dan riwayat dari `rhmau1/PBL_SEMESTER5`
+dengan kamera, crop tangan, model, dan kamus foto dari project
+`PBL-BAHASA-ISYARAT`.
 
 ## Menjalankan
 
-```powershell
-cd D:\PBL_SEMESTER5
+```bash
+cd ~/Documents/rhma2026/PBL_SEMESTER5
 flutter pub get
 flutter devices
 flutter run
@@ -30,15 +31,31 @@ Pengujian langsung pada HP diperlukan setelah perubahan integrasi.
 
 ## Validasi hasil merge
 
-Validasi lokal pada 12 Oktober 2026: `flutter analyze` bersih, seluruh
-81 tes otomatis lulus, dan `flutter build apk --debug` berhasil.
-APK berada di `build/app/outputs/flutter-apk/app-debug.apk`.
-Pengujian kamera langsung pada HP belum dilakukan untuk versi hasil merge.
+Validasi lokal pada 12 Oktober 2026: `flutter analyze` bersih dan
+`flutter build apk --debug` berhasil. APK berada di
+`build/app/outputs/flutter-apk/app-debug.apk`. Pengujian kamera langsung pada
+HP belum dilakukan untuk versi hasil merge.
+
+Status tes otomatis pada 18 Oktober 2026: `flutter analyze` bersih dan
+`flutter test` menjalankan 88 kasus dengan 88 lulus, 0 gagal. Sebelum
+perbaikan, suite berisi 81 kasus dan 4 di antaranya gagal: tiga tes upload
+mencari tombol lama yang sudah diganti tombol `Satu gambar` dan `Banyak
+gambar`, dan satu tes tata letak kamera mengharapkan jarak bebas 88 px
+sedangkan jarak bebas sebenarnya 84 px (24 px status bar + 8 px celah +
+52 px overlay). Setelah keempat tes diperbaiki, 81 kasus lama ditambah 7
+kasus baru di `test/session_result_sheet_test.dart` menjadi 88 kasus yang
+seluruhnya lulus.
+
+`flutter test` hanya menjalankan `test/`. Folder `integration_test/` memerlukan
+HP Android yang terhubung dan tidak ikut dijalankan oleh perintah tersebut.
+Workflow CI di `.github/workflows/ci.yml` menjalankan `flutter analyze` dan
+`flutter test` pada Ubuntu dengan Flutter 3.47.5.
 
 Kode classifier lama yang tidak digunakan dan laporan build bawaan dibersihkan;
 versi sebelumnya tetap tersedia dalam riwayat Git. File model, foto kamus,
 source Dart/Android, dokumentasi, dan `pubspec.lock` tersedia untuk tim.
-Perubahan merge masih lokal dan belum di-push ke GitHub.
+Branch `fijri` melacak `origin/fijri`, dan HEAD saat ini adalah commit merge
+`7ea9c5a`. Perubahan setelah merge masih belum di-commit di working tree.
 
 Project Flutter telah dipindahkan dari subfolder `sign_language` ke root
-repository agar `flutter run` bisa dijalankan langsung dari `D:\PBL_SEMESTER5`.
+repository agar `flutter run` bisa dijalankan langsung dari root repository.

@@ -33,8 +33,11 @@ class FullBleedCameraPreview extends StatelessWidget {
         // Match CameraPreview's orientation precedence, including the fixed
         // orientation of a recording and the orientation of a paused preview.
         // UI orientation alone cannot describe all of those states.
+        // During the brief window after startVideoRecording when
+        // recordingOrientation is not yet set, default to portraitUp to
+        // prevent the preview from appearing sideways.
         final orientation = value.isRecordingVideo
-            ? value.recordingOrientation!
+            ? (value.recordingOrientation ?? DeviceOrientation.portraitUp)
             : (value.previewPauseOrientation ??
                   value.lockedCaptureOrientation ??
                   value.deviceOrientation);

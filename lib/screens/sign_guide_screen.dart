@@ -140,6 +140,9 @@ class _LetterCard extends StatelessWidget {
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
+      constraints: BoxConstraints(
+        minWidth: MediaQuery.sizeOf(context).width,
+      ),
       builder: (context) => SingleChildScrollView(
         child: SafeArea(
           top: false,
@@ -147,38 +150,44 @@ class _LetterCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (item.imageAsset != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Image.asset(
-                      item.imageAsset!,
-                      width: 220,
-                      height: 220,
-                      fit: BoxFit.cover,
+                  Center(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Image.asset(
+                        item.imageAsset!,
+                        width: 220,
+                        height: 220,
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   )
                 else
-                  Container(
-                    width: 180,
-                    height: 120,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF0CC),
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Text(
-                      '${item.letter} · membutuhkan gerakan',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: const Color(0xFF7A4B00),
-                        fontWeight: FontWeight.w900,
+                  Center(
+                    child: Container(
+                      width: 180,
+                      height: 120,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF0CC),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Text(
+                        '${item.letter} · membutuhkan gerakan',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: const Color(0xFF7A4B00),
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                   ),
                 const SizedBox(height: 18),
                 Text(
                   'Bentuk tangan huruf ${item.letter}',
+                  textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 10),
@@ -191,6 +200,7 @@ class _LetterCard extends StatelessWidget {
                   const SizedBox(height: 12),
                   const Text(
                     'Model saat ini tidak mengenali huruf ini.',
+                    textAlign: TextAlign.center,
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ],

@@ -18,7 +18,7 @@ Periksa kamera depan dan belakang pada kondisi berikut:
 5. Pindah menu Home/Kamus/Riwayat lalu kembali ke Deteksi.
 6. Tekan Home Android, kembali ke aplikasi, dan coba lagi.
 
-Pastikan tombol dan navigasi tidak mengaktifkan kamera kedua atau rekaman
+Pastikan tombol dan navigasi tidak mengaktifkan kamera kedua secara
 bersamaan. Setelah perubahan native, lakukan stop dan run ulang sebelum
 menilai perbaikan preview.
 
@@ -28,14 +28,17 @@ Pada Video, pilih latihan bebas, tekan Mulai, dan peragakan beberapa huruf
 statis. Semua ujung jari harus terlihat. Tangan boleh berada di luar tengah
 frame selama terlihat kamera dan dideteksi MediaPipe.
 
-Tekan Akhiri dan periksa bahwa urutan huruf tampil di akhir, rekaman selesai,
-dan satu hasil sesi masuk ke Riwayat bila terdapat huruf yang diterima. Jika
+Tekan Akhiri dan periksa bahwa urutan huruf tampil di akhir dan satu hasil
+sesi masuk ke Riwayat bila terdapat huruf yang diterima. Hasil tampil pada
+bottom sheet selebar layar yang tingginya tetap sama di setiap sesi; bila
+layar tersedia, ulangi pada sedikitnya dua ukuran layar. Aplikasi tidak
+merekam video, jadi tidak ada berkas rekaman yang perlu diperiksa. Jika
 tidak ada huruf diterima, jangan menganggap sesi tersebut berhasil mengenali
 tangan. Rangkaian huruf belum memiliki spasi otomatis.
 
 Untuk target huruf, pilih huruf dan peragakan pose yang sesuai tanpa menekan
 Mulai. Periksa prediksi langsung, status benar/salah, dan Reset hasil. Mode
-target tidak merekam video dan tidak menambahkan setiap frame ke Riwayat.
+target tidak menambahkan setiap frame ke Riwayat.
 
 Uji pula kamera tanpa tangan: huruf baru tidak boleh diterima hanya karena
 model menebak objek atau latar. Prediksi lama dapat tetap terlihat sebagai
@@ -45,8 +48,9 @@ hasil sebelumnya; bedakan dari penambahan huruf baru.
 
 - Foto: ambil foto, deteksi, lihat keyakinan model, lalu ambil ulang. Coba
   kamera depan dan belakang; hasil foto harus memiliki orientasi yang benar.
-- Upload: coba satu gambar, beberapa gambar, batalkan pemilihan, dan coba
-  gambar yang gagal dibaca. Periksa urutan hasil dan pesan kesalahan.
+- Upload: coba tombol `Satu gambar` dan `Banyak gambar`, batalkan pemilihan,
+  dan coba gambar yang gagal dibaca. Periksa urutan hasil, label `Belum yakin`
+  untuk keyakinan di bawah 60%, dan pesan kesalahan.
 - Foto/upload: tempatkan tangan di tengah gambar. Kedua jalur ini memakai
   crop tengah dan EXIF, belum crop MediaPipe seperti jalur frame video.
 - Kamus: buka seluruh 24 foto huruf. J dan Z harus dijelaskan sebagai gerakan
@@ -56,9 +60,10 @@ hasil sebelumnya; bedakan dari penambahan huruf baru.
   semua, termasuk batal pada dialog konfirmasi.
 - Izin: coba penolakan izin kamera dan buka kembali setelah izin diberikan.
 
-Detail rekaman saat ini menunjukkan lokasi file, bukan pemutar video.
-Penghapusan riwayat menghapus catatan; file media tidak otomatis seluruhnya
-dibersihkan. Jika aplikasi/data dihapus, data lokal hilang.
+Detail riwayat menampilkan foto bila tersedia. Tidak ada pemutar video dan
+tidak ada rekaman yang disimpan. Penghapusan riwayat menghapus catatan; file
+media tidak otomatis seluruhnya dibersihkan. Jika aplikasi/data dihapus, data
+lokal hilang.
 
 ## 4. Mengukur akurasi kamera
 

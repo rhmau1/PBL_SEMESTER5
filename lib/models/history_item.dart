@@ -51,7 +51,6 @@ class HistoryItem {
     'video' => 'Latihan bebas',
     'photo' => 'Foto kamera',
     'upload' => 'Upload gambar',
-    'target' => 'Latihan huruf',
     _ => 'Deteksi sebelumnya',
   };
 

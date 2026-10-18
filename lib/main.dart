@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/history_item.dart';
 import 'pages/detection_page.dart';
@@ -14,13 +13,7 @@ import 'widgets/app_bottom_nav.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  final preferences = await SharedPreferences.getInstance();
-  runApp(
-    ProviderScope(
-      overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
-      child: const MyApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 class MyApp extends StatelessWidget {
@@ -73,7 +66,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final cameraSelected = _selectedIndex == 1;
     final page = switch (_selectedIndex) {
       0 => HomePage(onNavigate: _navigate),
       1 => DetectionPage(
@@ -89,13 +81,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       _ => const HistoryPage(),
     };
     return Scaffold(
-      extendBody: cameraSelected,
       body: page,
       bottomNavigationBar: AppBottomNav(
         currentIndex: _selectedIndex,
         onSelected: _navigate,
         enabled: !_detectionBusy,
-        cameraOverlay: cameraSelected,
       ),
     );
   }
