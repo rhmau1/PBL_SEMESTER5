@@ -9,6 +9,7 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../models/sign_prediction.dart';
 import 'image_preprocessor.dart';
+import 'still_image_hand_detector.dart';
 
 class SignClassifier {
   SignClassifier._();
@@ -94,6 +95,19 @@ class SignClassifier {
     return classifyImage(image);
   }
 
+  Future<SignPrediction> classifyUploadFile(String path) async {
+    const detector = StillImageHandDetector();
+    final image = await detector.loadImage(path);
+    final landmarks = await detector.detect(image);
+    if (!isReady) await initialize();
+    return _classifyHandCrops(
+      ImagePreprocessor.imageToGrayHandCrops(
+        image,
+        normalizedLandmarks: landmarks,
+      ),
+    );
+  }
+
   Future<SignPrediction> classifyCameraFrame(
     CameraImage cameraImage, {
     required int rotationDegrees,
@@ -107,6 +121,10 @@ class SignClassifier {
       mirrorHorizontally: mirrorHorizontally,
       normalizedLandmarks: normalizedLandmarks,
     );
+    return _classifyHandCrops(crops);
+  }
+
+  Future<SignPrediction> _classifyHandCrops(CameraFrameCrops crops) async {
     final contextInput = ImagePreprocessor.toModelImage(crops.context);
     final contextPrediction = await _classifyModelImage(contextInput);
     final landmarkPrediction = _classifyLandmarks(crops.orientedLandmarks);
