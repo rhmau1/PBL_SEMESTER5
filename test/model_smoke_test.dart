@@ -96,7 +96,18 @@ void main() {
     );
     final input = ImagePreprocessor.toModelInput(image);
 
-    expect(model.lengthInBytes, greaterThan(5 * 1024 * 1024));
+    // Model size changes with architecture/quantization. Check the TFLite
+    // identifier instead of requiring the old model's minimum file size.
+    expect(model.lengthInBytes, greaterThanOrEqualTo(8));
+    final modelBytes = model.buffer.asUint8List(
+      model.offsetInBytes,
+      model.lengthInBytes,
+    );
+    expect(
+      modelBytes.sublist(4, 8),
+      orderedEquals(ascii.encode('TFL3')),
+      reason: 'Asset model harus memiliki identifier TensorFlow Lite.',
+    );
     expect(labels, hasLength(24));
     expect(references.keys.toSet(), labels.toSet());
     expect(
