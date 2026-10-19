@@ -51,8 +51,12 @@ hasil sebelumnya; bedakan dari penambahan huruf baru.
 - Upload: coba tombol `Satu gambar` dan `Banyak gambar`, batalkan pemilihan,
   dan coba gambar yang gagal dibaca. Periksa urutan hasil, label `Belum yakin`
   untuk keyakinan di bawah 60%, dan pesan kesalahan.
-- Foto/upload: tempatkan tangan di tengah gambar. Kedua jalur ini memakai
-  crop tengah dan EXIF, belum crop MediaPipe seperti jalur frame video.
+- Foto kamera: tempatkan tangan di tengah gambar; jalur ini masih memakai
+  crop tengah dengan koreksi EXIF.
+- Upload: uji tangan di tengah dan dekat tepi gambar, foto berotasi EXIF,
+  gambar tanpa tangan, dan dua tangan. MediaPipe mode IMAGE harus menentukan
+  crop tangan; gambar tanpa tangan/dua tangan tidak menambah huruf maupun
+  riwayat, dan gambar berikutnya dalam batch tetap diproses.
 - Kamus: buka seluruh 24 foto huruf. J dan Z harus dijelaskan sebagai gerakan
   yang belum dikenali model statis.
 - Riwayat: lihat hasil, waktu, sumber, dan confidence; buka detail foto,

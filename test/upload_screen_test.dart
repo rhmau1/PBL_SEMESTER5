@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:sign_language/models/history_item.dart';
 import 'package:sign_language/models/sign_prediction.dart';
 import 'package:sign_language/screens/upload_screen.dart';
+import 'package:sign_language/services/still_image_hand_detector.dart';
 
 SignPrediction prediction(String label, double confidence) => SignPrediction(
   label: label,
@@ -16,6 +17,36 @@ SignPrediction prediction(String label, double confidence) => SignPrediction(
 Widget host(UploadScreen screen) => MaterialApp(home: Scaffold(body: screen));
 
 void main() {
+  testWidgets('gambar tanpa tangan dilewati dan batch tetap berlanjut', (
+    tester,
+  ) async {
+    final saved = <HistoryItem>[];
+    await tester.pumpWidget(
+      host(
+        UploadScreen(
+          pickFiles: (_) async => [XFile('no_hand.png'), XFile('hand.png')],
+          classifyFile: (path) async {
+            if (path == 'no_hand.png') {
+              throw const HandImageException('Tangan tidak terdeteksi.');
+            }
+            return prediction('C', 0.95);
+          },
+          saveImage: (file) async => 'saved/${file.path}',
+          onResultSaved: (item) async => saved.add(item),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Banyak gambar'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Tangan tidak terdeteksi'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('upload-letters'))).data,
+      'C',
+    );
+    expect(saved.map((item) => item.gesture), ['C']);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'upload menjaga urutan, menolak hasil ragu, dan menyimpan path permanen',
     (tester) async {

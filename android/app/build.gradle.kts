@@ -55,4 +55,6 @@ flutter {
 dependencies {
     // App-owned preview bridge reads CameraX's actual surface transform.
     implementation("androidx.camera:camera-core:1.6.1")
+    // Match hand_landmarker; IMAGE mode reuses its bundled hand_landmarker.task.
+    implementation("com.google.mediapipe:tasks-vision:1.0.0")
 }

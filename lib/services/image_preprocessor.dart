@@ -124,6 +124,35 @@ class ImagePreprocessor {
     );
   }
 
+  static CameraFrameCrops imageToGrayHandCrops(
+    img.Image image, {
+    required List<Offset> normalizedLandmarks,
+  }) {
+    if (normalizedLandmarks.length != 21) {
+      throw ArgumentError('Crop tangan membutuhkan 21 landmark.');
+    }
+    final bounds = _boundsForPoints(normalizedLandmarks);
+    return CameraFrameCrops(
+      context: toModelImage(
+        _cropAroundHand(
+          image,
+          bounds,
+          paddingScale: _contextPaddingScale,
+          minimumSideFraction: _contextMinimumSideFraction,
+        ),
+      ),
+      tight: toModelImage(
+        _cropAroundHand(
+          image,
+          bounds,
+          paddingScale: _tightPaddingScale,
+          minimumSideFraction: _tightMinimumSideFraction,
+        ),
+      ),
+      orientedLandmarks: List<Offset>.unmodifiable(normalizedLandmarks),
+    );
+  }
+
   static List<Offset> orientNormalizedPoints(
     List<Offset> points, {
     required int rotationDegrees,

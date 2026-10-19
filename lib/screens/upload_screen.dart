@@ -84,7 +84,7 @@ class _UploadScreenState extends State<UploadScreen> {
         try {
           prediction =
               await (widget.classifyFile ??
-                  SignClassifier.instance.classifyFile)(path);
+                  SignClassifier.instance.classifyUploadFile)(path);
         } catch (failure) {
           error = '$failure';
         }
@@ -151,7 +151,7 @@ class _UploadScreenState extends State<UploadScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Gunakan foto dekat satu tangan, seluruh jari terlihat, dan latar sederhana.',
+                  'MediaPipe mencari dan memotong area tangan secara otomatis. Gunakan satu tangan dengan seluruh jari terlihat.',
                 ),
                 const SizedBox(height: 20),
                 Row(
