@@ -1,17 +1,7 @@
 {
   "schema_version": 1,
-  "experimental": true,
-  "model_name": "LatihIsyarat PBL - Three-Seed Ensemble",
-  "model_version": "wide_3seed_full_data_refit_v1",
-  "selected_stage": "after_full_data_fine_tune",
-  "member_seeds": [
-    42,
-    123,
-    2026
-  ],
-  "target_test_accuracy": 0.995,
-  "target_achieved": false,
-  "selection_warning": "The three experimental stages were compared on the official test set. This is an exploratory result, not an untouched final benchmark.",
+  "model_name": "LatihIsyarat - camera-domain robust",
+  "model_version": "camera_robust_v1",
   "input_contract": {
     "shape": [
       1,
@@ -25,7 +15,7 @@
       255.0
     ],
     "color_space": "grayscale",
-    "normalization": "Rescaling(1/255) inside every ensemble member",
+    "normalization": "Rescaling(1/255) inside the model",
     "mobile_must_divide_by_255": false
   },
   "output_contract": {
@@ -61,47 +51,35 @@
       "Y"
     ]
   },
+  "training_data": {
+    "sign_mnist_rows": 27455,
+    "augmented_sign_mnist_rows": 109820,
+    "real_photos_train": 7633,
+    "real_photos_test": 2400,
+    "total_rows": 132719,
+    "augmentation": "polarity flip, 55-100% hand scale, random background with guaranteed contrast, rotation/shear, gamma, blur, noise"
+  },
+  "metrics": {
+    "clean": {
+      "accuracy": 0.9998605688789738,
+      "mean_confidence": 0.998591959476471
+    },
+    "camera_sim": {
+      "accuracy": 0.8676798661461238,
+      "mean_confidence": 0.8876750469207764
+    },
+    "real_photos": {
+      "accuracy": 0.4426388888888889,
+      "mean_confidence": 0.45473384857177734
+    }
+  },
   "tflite": {
     "path": "model_float16.tflite",
     "quantization": "float16_weights",
-    "size_bytes": 5523980,
-    "size_mib": 5.268077850341797,
-    "sha256": "80127bd9f692750047447500578bc8ecc3cdca466eee14037a55d53dc7ea79a9"
+    "size_bytes": 326108,
+    "sha256": "74f52ab0d6f091b37600ce65c4b7797a102c6e26112b6c2e4824483b168140bc",
+    "keras_tflite_label_agreement": 1.0,
+    "maximum_absolute_score_difference": 0.0027862489223480225
   },
-  "test_metrics": {
-    "accuracy": 0.9930284439486894,
-    "macro_precision": 0.9934157867760499,
-    "macro_recall": 0.9935455660556523,
-    "macro_f1": 0.993325220663429
-  },
-  "stage_comparison": [
-    {
-      "stage": "existing_two_seed_winner",
-      "accuracy_pct": 98.9542665923034,
-      "macro_f1_pct": 98.97781523033582,
-      "errors": 75,
-      "tflite_float16_mib": 3.512592315673828,
-      "tflite_label_agreement_pct": 100.0,
-      "target_99_5": false
-    },
-    {
-      "stage": "before_full_data_fine_tune",
-      "accuracy_pct": 98.73117679866145,
-      "macro_f1_pct": 98.81296384514539,
-      "errors": 91,
-      "tflite_float16_mib": 5.268077850341797,
-      "tflite_label_agreement_pct": 100.0,
-      "target_99_5": false
-    },
-    {
-      "stage": "after_full_data_fine_tune",
-      "accuracy_pct": 99.30284439486894,
-      "macro_f1_pct": 99.3325220663429,
-      "errors": 50,
-      "tflite_float16_mib": 5.268077850341797,
-      "tflite_label_agreement_pct": 100.0,
-      "target_99_5": false
-    }
-  ],
-  "camera_warning": "Dataset accuracy is not camera accuracy."
+  "camera_warning": "Angka real_photos adalah foto webcam, bukan kamera HP. Ukur ulang di HP sebelum menyimpulkan akurasi."
 }
