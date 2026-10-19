@@ -1258,7 +1258,7 @@ class _CameraScreenState extends State<CameraScreen>
                             : prediction != null && !reliable
                             ? 'Ambil ulang dengan tangan lebih jelas dan pencahayaan cukup.'
                             : path == null
-                            ? 'Dekatkan tangan agar memenuhi foto. Pastikan semua jari dan sedikit pergelangan terlihat.'
+                            ? 'Area tangan dipotong otomatis. Gunakan satu tangan dengan seluruh jari dan sedikit pergelangan terlihat.'
                             : 'Periksa foto, lalu tekan Deteksi. Ambil ulang jika tangan kurang jelas.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(

@@ -44,9 +44,8 @@ acak. Deteksi tangan memiliki interval tersendiri, sehingga angka ini bukan
 jaminan waktu respons. Huruf diterima setelah prediksi stabil dan memenuhi
 batas keyakinan 60%. Model dengan keyakinan tinggi tetap dapat salah.
 
-Foto kamera memakai `classifyFile`: orientasi EXIF dikoreksi, gambar di-crop
-persegi dari tengah, lalu diubah menjadi input model. Upload memakai MediaPipe
-Hand Landmarker mode IMAGE: EXIF dikoreksi, tangan dicari pada seluruh gambar,
+Foto kamera dan Upload memakai MediaPipe Hand Landmarker mode IMAGE melalui
+`classifyFile`: EXIF dikoreksi, tangan dicari pada seluruh gambar,
 lalu crop persegi mengikuti tangan sebelum CNN dijalankan. Foto tanpa tangan
 atau dengan lebih dari satu tangan tidak diterima sebagai huruf. Model deteksi
 tangan memakai asset yang sudah disertakan package `hand_landmarker`, tanpa

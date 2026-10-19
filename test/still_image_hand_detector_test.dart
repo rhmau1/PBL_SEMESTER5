@@ -37,28 +37,37 @@ void main() {
     },
   );
 
-  test(
-    'upload pipeline rejects no hand before loading or running CNN',
-    () async {
-      final directory = await Directory.systemTemp.createTemp(
-        'upload_no_hand_',
+  for (final entry in {
+    'camera photo': SignClassifier.instance.classifyFile,
+    'upload': SignClassifier.instance.classifyUploadFile,
+  }.entries) {
+    for (final handCount in [0, 2]) {
+      test(
+        '${entry.key} rejects $handCount hands before loading or running CNN',
+        () async {
+          final directory = await Directory.systemTemp.createTemp(
+            'upload_no_hand_',
+          );
+          addTearDown(() => directory.delete(recursive: true));
+          final file = File('${directory.path}/empty.png');
+          await file.writeAsBytes(
+            img.encodePng(img.Image(width: 40, height: 40)),
+          );
+          var calls = 0;
+          messenger.setMockMethodCallHandler(_channel, (_) async {
+            calls++;
+            return List.generate(handCount, (_) => _hand());
+          });
+          await expectLater(
+            entry.value(file.path),
+            throwsA(isA<HandImageException>()),
+          );
+          expect(calls, 1);
+          expect(SignClassifier.instance.isReady, isFalse);
+        },
       );
-      addTearDown(() => directory.delete(recursive: true));
-      final file = File('${directory.path}/empty.png');
-      await file.writeAsBytes(img.encodePng(img.Image(width: 40, height: 40)));
-      var calls = 0;
-      messenger.setMockMethodCallHandler(_channel, (_) async {
-        calls++;
-        return [];
-      });
-      await expectLater(
-        SignClassifier.instance.classifyUploadFile(file.path),
-        throwsA(isA<HandImageException>()),
-      );
-      expect(calls, 1);
-      expect(SignClassifier.instance.isReady, isFalse);
-    },
-  );
+    }
+  }
 
   test(
     'sends a complete image to IMAGE mode, preserving its dimensions',
