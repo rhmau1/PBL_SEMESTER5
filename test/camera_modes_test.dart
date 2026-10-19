@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:sign_language/models/history_item.dart';
 import 'package:sign_language/pages/detection_page.dart';
 import 'package:sign_language/screens/camera_screen.dart';
 
@@ -120,12 +121,14 @@ Widget _screen({
   bool photoMode = false,
   bool enabled = false,
   ValueChanged<bool>? onBusyChanged,
+  Future<void> Function(HistoryItem)? onResultSaved,
 }) => MaterialApp(
   home: Scaffold(
     body: CameraScreen(
       cameraEnabled: enabled,
       photoMode: photoMode,
       onBusyChanged: onBusyChanged,
+      onResultSaved: onResultSaved,
     ),
   ),
 );
@@ -222,7 +225,7 @@ void main() {
   );
 
   testWidgets(
-    'capture stores the photo before Detect; Retake returns to preview',
+    'photo detection uses MediaPipe, rejects no hand, and allows retry/retake',
     (tester) async {
       final directory = (await tester.runAsync(() async {
         final directory = await Directory.systemTemp.createTemp(
@@ -235,12 +238,21 @@ void main() {
       final original = File('${directory.path}/temporary.jpg');
       backend.picturePath = original.path;
       var isBusy = false;
+      var handDetectionCalls = 0;
+      final savedResults = <HistoryItem>[];
       const channel = MethodChannel('plugins.flutter.io/path_provider');
+      const handChannel = MethodChannel('latih_isyarat/image_hand_landmarker');
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
       messenger.setMockMethodCallHandler(channel, (_) async => directory.path);
+      messenger.setMockMethodCallHandler(handChannel, (call) async {
+        expect(call.method, 'detect');
+        handDetectionCalls++;
+        return [];
+      });
       addTearDown(() async {
         messenger.setMockMethodCallHandler(channel, null);
+        messenger.setMockMethodCallHandler(handChannel, null);
         // Windows can retain the file briefly while Flutter's image codec
         // finishes an asynchronous read after Retake unmounts Image.file.
         for (var attempt = 0; attempt < 10; attempt++) {
@@ -265,6 +277,7 @@ void main() {
           photoMode: true,
           enabled: true,
           onBusyChanged: (busy) => isBusy = busy,
+          onResultSaved: (item) async => savedResults.add(item),
         ),
       );
       await tester.pumpAndSettle();
@@ -283,6 +296,25 @@ void main() {
       final files = Directory('${directory.path}/photos').listSync();
       expect(files, hasLength(1));
       expect(files.single.path, isNot(original.path));
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await tester.tap(find.text('Deteksi'));
+        for (var poll = 0; isBusy && poll < 100; poll++) {
+          await tester.pump();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        await tester.pump();
+        expect(isBusy, isFalse);
+        expect(handDetectionCalls, attempt + 1);
+        expect(find.textContaining('Tangan tidak terdeteksi'), findsOneWidget);
+        expect(savedResults, isEmpty);
+        expect(find.text('Deteksi'), findsOneWidget);
+        // Dismiss the previous error before checking a second attempt.
+        ScaffoldMessenger.of(tester.element(find.byType(CameraScreen)))
+            .removeCurrentSnackBar();
+        await tester.pumpAndSettle();
+      }
       // Let the image codec finish reading in the real IO zone before the
       // preview is removed, then release cached decoded images explicitly.
       await tester.runAsync(

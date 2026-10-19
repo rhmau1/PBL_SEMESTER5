@@ -21,7 +21,7 @@ class StillImageHandDetector {
 
   static const _channel = MethodChannel('latih_isyarat/image_hand_landmarker');
 
-  Future<img.Image> loadImage(String path) => compute(_decodeUploadImage, path);
+  Future<img.Image> loadImage(String path) => compute(_decodeStillImage, path);
 
   Future<List<Offset>> detect(img.Image image) async {
     final Uint8List bytes = img.encodeJpg(image, quality: 95);
@@ -67,10 +67,10 @@ class StillImageHandDetector {
   }
 }
 
-img.Image _decodeUploadImage(String path) {
+img.Image _decodeStillImage(String path) {
   final image = ImagePreprocessor.decodeFileBytes(File(path).readAsBytesSync());
   // Preserve the entire upright image and its aspect ratio. Landmarks and CNN
-  // crops use the same coordinates; gallery EXIF is applied exactly once.
+  // crops use the same coordinates; photo EXIF is applied exactly once.
   final longest = image.width > image.height ? image.width : image.height;
   if (longest <= 1024) return image;
   return img.copyResize(

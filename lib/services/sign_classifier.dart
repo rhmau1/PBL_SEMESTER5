@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
@@ -89,13 +88,6 @@ class SignClassifier {
   }
 
   Future<SignPrediction> classifyFile(String path) async {
-    await initialize();
-    final bytes = await File(path).readAsBytes();
-    final image = ImagePreprocessor.decodeFileBytes(bytes);
-    return classifyImage(image);
-  }
-
-  Future<SignPrediction> classifyUploadFile(String path) async {
     const detector = StillImageHandDetector();
     final image = await detector.loadImage(path);
     final landmarks = await detector.detect(image);
@@ -107,6 +99,8 @@ class SignClassifier {
       ),
     );
   }
+
+  Future<SignPrediction> classifyUploadFile(String path) => classifyFile(path);
 
   Future<SignPrediction> classifyCameraFrame(
     CameraImage cameraImage, {
