@@ -109,3 +109,6 @@ Ikuti [CAMERA_VALIDATION.md](CAMERA_VALIDATION.md) untuk pengujian HP.
 Catatan penggabungan tersedia di [MERGE_NOTES.md](MERGE_NOTES.md).
 Tes otomatis memeriksa logika dan pengolahan data; tes tersebut tidak
 membuktikan bahwa prediksi semua huruf di kamera nyata sudah akurat.
+
+Link Figma :
+https://www.figma.com/design/SewQENN5995xunTwIdynXo/Sign-Language----F?node-id=0-1&t=NdBmrhNT66jatJ47-0

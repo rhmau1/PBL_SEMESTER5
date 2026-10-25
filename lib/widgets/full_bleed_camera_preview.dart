@@ -20,6 +20,7 @@ class FullBleedCameraPreview extends StatelessWidget {
         if (value.isInitialized && geometry.value != null) {
           return _nativePreview(geometry.value!);
         }
+
         final previewSize = value.previewSize;
         if (!value.isInitialized ||
             previewSize == null ||
@@ -29,7 +30,7 @@ class FullBleedCameraPreview extends StatelessWidget {
             previewSize.height <= 0) {
           return const SizedBox.expand();
         }
-
+        
         // Match CameraPreview's orientation precedence, including the fixed
         // orientation of a recording and the orientation of a paused preview.
         // UI orientation alone cannot describe all of those states.
