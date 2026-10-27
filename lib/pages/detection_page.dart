@@ -14,12 +14,14 @@ class DetectionPage extends StatefulWidget {
   const DetectionPage({
     super.key,
     this.cameraEnabled = true,
+    this.initialTab = 0,
     this.onResultSaved,
     this.onBusyChanged,
     this.onCameraActiveChanged,
   });
 
   final bool cameraEnabled;
+  final int initialTab;
   final Future<void> Function(HistoryItem)? onResultSaved;
   final ValueChanged<bool>? onBusyChanged;
   final ValueChanged<bool>? onCameraActiveChanged;
@@ -29,11 +31,7 @@ class DetectionPage extends StatefulWidget {
 }
 
 class _DetectionPageState extends State<DetectionPage> {
-  // Warna hijau utama yang sama persis dengan HomePage
-  static const Color _homeGreen = Color(0xFF2E7D32);
-  static const Color _homeLightGreen = Color(0xFFE8F5E9);
-
-  int _selectedTab = 0;
+  late int _selectedTab = widget.initialTab;
   bool _busy = false;
 
   void _setBusy(bool value) {
@@ -51,42 +49,47 @@ class _DetectionPageState extends State<DetectionPage> {
   Widget build(BuildContext context) {
     final isCamera = _selectedTab != 2;
     final selector = SegmentedButton<int>(
+      showSelectedIcon: false,
       segments: const [
         ButtonSegment(
           value: 0,
-          icon: Icon(Icons.videocam_outlined),
+          icon: Icon(Icons.videocam_rounded),
           label: Text('Video'),
         ),
         ButtonSegment(
           value: 1,
-          icon: Icon(Icons.camera_alt_outlined),
+          icon: Icon(Icons.camera_alt_rounded),
           label: Text('Foto'),
         ),
         ButtonSegment(
           value: 2,
-          icon: Icon(Icons.photo_library_outlined),
+          icon: Icon(Icons.photo_library_rounded),
           label: Text('Upload'),
         ),
       ],
       selected: {_selectedTab},
       onSelectionChanged: _busy
           ? null
-          : (selection) => _setTab(selection.single),
+          : (selection) => setState(() => _selectedTab = selection.single),
       style: ButtonStyle(
-        backgroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return _homeGreen;
-          }
-          return isCamera ? const Color(0xDD101714) : Colors.white;
-        }),
-        foregroundColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return Colors.white;
-          }
-          return isCamera ? Colors.white : _homeGreen;
-        }),
-        side: WidgetStatePropertyAll(
-          BorderSide(color: isCamera ? Colors.white24 : _homeLightGreen),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        ),
+        textStyle: const WidgetStatePropertyAll(
+          TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? const Color(0xFF2864F0)
+              : const Color(0xFFE9EEF8),
+        ),
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? Colors.white
+              : const Color(0xFF64748B),
+        ),
+        side: const WidgetStatePropertyAll(
+          BorderSide(color: Colors.transparent),
         ),
       ),
     );
@@ -96,7 +99,7 @@ class _DetectionPageState extends State<DetectionPage> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: selector,
             ),
             Expanded(
