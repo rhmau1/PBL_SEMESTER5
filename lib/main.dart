@@ -61,11 +61,21 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   int _selectedIndex = 0;
+  int _detectionInitialTab = 0;
   bool _detectionBusy = false;
 
   void _navigate(int index) {
     if (_detectionBusy || index == _selectedIndex) return;
+    _detectionInitialTab = 0;
     setState(() => _selectedIndex = index);
+  }
+
+  void _openUpload() {
+    if (_detectionBusy) return;
+    setState(() {
+      _selectedIndex = 1;
+      _detectionInitialTab = 2;
+    });
   }
 
   Future<void> _saveResult(HistoryItem item) =>
@@ -75,9 +85,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   Widget build(BuildContext context) {
     final cameraSelected = _selectedIndex == 1;
     final page = switch (_selectedIndex) {
-      0 => HomePage(onNavigate: _navigate),
+      0 => HomePage(onNavigate: _navigate, onUploadTap: _openUpload),
       1 => DetectionPage(
         cameraEnabled: widget.cameraEnabled,
+        initialTab: _detectionInitialTab,
         onResultSaved: _saveResult,
         onBusyChanged: (busy) {
           if (mounted && busy != _detectionBusy) {

@@ -20,37 +20,59 @@ class AppBottomNav extends StatelessWidget {
       currentIndex: currentIndex,
       onTap: enabled ? onSelected : null,
       type: BottomNavigationBarType.fixed,
-      selectedItemColor: cameraOverlay
-          ? const Color(0xFF80DB91)
-          : const Color(0xFF2E7D32),
-      unselectedItemColor: cameraOverlay
-          ? Colors.white70
-          : const Color(0xFF757575),
-      backgroundColor: cameraOverlay ? const Color(0xEB101714) : Colors.white,
-      elevation: 8,
+      selectedItemColor: const Color(0xFF2864F0),
+      unselectedItemColor: const Color(0xFF7585A2),
+      backgroundColor: Colors.white,
+      elevation: 0,
+      iconSize: 24,
       selectedLabelStyle: const TextStyle(
         fontSize: 11,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
       ),
-      unselectedLabelStyle: const TextStyle(fontSize: 11),
+      unselectedLabelStyle: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w500,
+      ),
       items: const [
         BottomNavigationBarItem(
           icon: Icon(Icons.home_outlined),
-          activeIcon: Icon(Icons.home),
+          activeIcon: _SelectedNavIcon(icon: Icons.home_outlined),
           label: 'Home',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.camera_alt_outlined),
-          activeIcon: Icon(Icons.camera_alt),
+          icon: Icon(Icons.center_focus_weak_rounded),
+          activeIcon: _SelectedNavIcon(icon: Icons.center_focus_weak_rounded),
           label: 'Deteksi',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.menu_book_outlined),
-          activeIcon: Icon(Icons.menu_book),
+          activeIcon: _SelectedNavIcon(icon: Icons.menu_book_outlined),
           label: 'Kamus',
         ),
-        BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Riwayat'),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.history_rounded),
+          activeIcon: _SelectedNavIcon(icon: Icons.history_rounded),
+          label: 'Riwayat',
+        ),
       ],
+    );
+  }
+}
+
+class _SelectedNavIcon extends StatelessWidget {
+  const _SelectedNavIcon({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF0FF),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Icon(icon, color: const Color(0xFF2864F0), size: 24),
     );
   }
 }

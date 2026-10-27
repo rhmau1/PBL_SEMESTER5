@@ -67,6 +67,64 @@ void main() {
     expect(find.text('/recordings/session.mp4'), findsOneWidget);
   });
 
+  testWidgets('history category chips filter camera and upload results', (
+    tester,
+  ) async {
+    final store = _HistoryStore()
+      ..rows.addAll([
+        HistoryItem.fromDetection(
+          gesture: 'PHOTO',
+          confidence: 0.82,
+          source: 'photo',
+        ).copyWith(id: 2),
+        HistoryItem.fromDetection(
+          gesture: 'UPLOAD',
+          confidence: 0.91,
+          source: 'upload',
+        ).copyWith(id: 3),
+      ]);
+    await _showHistory(tester, store);
+
+    await tester.tap(find.text('Kamera'));
+    await tester.pumpAndSettle();
+    expect(find.text('ABC'), findsOneWidget);
+    expect(find.text('PHOTO'), findsOneWidget);
+    expect(find.text('UPLOAD'), findsNothing);
+
+    await tester.tap(find.text('Upload'));
+    await tester.pumpAndSettle();
+    expect(find.text('UPLOAD'), findsOneWidget);
+    expect(find.text('ABC'), findsNothing);
+    expect(find.text('PHOTO'), findsNothing);
+  });
+
+  testWidgets('empty camera and upload filters explain no detections yet', (
+    tester,
+  ) async {
+    final store = _HistoryStore();
+    await _showHistory(tester, store);
+
+    await tester.tap(find.text('Upload'));
+    await tester.pumpAndSettle();
+    expect(find.text('Belum ada deteksi upload'), findsOneWidget);
+    expect(find.textContaining('gambar yang diunggah'), findsOneWidget);
+
+    final uploadOnlyStore = _HistoryStore()
+      ..rows.clear()
+      ..rows.add(
+        HistoryItem.fromDetection(
+          gesture: 'UPLOAD',
+          confidence: 0.9,
+          source: 'upload',
+        ).copyWith(id: 2),
+      );
+    await _showHistory(tester, uploadOnlyStore);
+    await tester.tap(find.text('Kamera'));
+    await tester.pumpAndSettle();
+    expect(find.text('Belum ada deteksi kamera'), findsOneWidget);
+    expect(find.textContaining('mode Foto atau Video'), findsOneWidget);
+  });
+
   testWidgets('delete confirmation waits for persistence before success', (
     tester,
   ) async {

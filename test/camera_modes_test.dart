@@ -150,12 +150,31 @@ void main() {
   ) async {
     await tester.pumpWidget(_screen(photoMode: true));
     expect(find.text('Foto Isyarat'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('camera-detection-frame')),
+      findsOneWidget,
+    );
     expect(find.text('Ambil foto'), findsOneWidget);
     expect(find.byType(DropdownButton<String>), findsNothing);
     expect(find.text('Mulai latihan bebas'), findsNothing);
     expect(find.text('Deteksi'), findsNothing);
     final button = tester.widget<FilledButton>(find.byType(FilledButton));
     expect(button.onPressed, isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('Video keeps a visible detection frame with a compact header', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_screen());
+    expect(find.text('Kamera Latihan'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('camera-detection-frame')),
+      findsOneWidget,
+    );
+    expect(find.text('Tangan boleh di mana saja dalam frame'), findsNothing);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
   });
