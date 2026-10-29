@@ -223,9 +223,8 @@ void main() {
       expect(backButton, findsOneWidget);
       await tester.tap(backButton);
       await tester.pumpAndSettle();
-
       expect(find.byType(GuidePage), findsNothing);
-      expect(find.text('Mau mulai dari mana?'), findsOneWidget);
+      expect(find.text('LatihIsyarat'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
