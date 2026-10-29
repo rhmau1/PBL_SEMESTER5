@@ -142,4 +142,5 @@ https://github.com/rhmau1/PBL_SEMESTER5
 rhmau1 = Fijriati Rahmatur Rizqi
 silvatria = Silva Tria Alfares
 SahrulRamadhani29 = Sahrul Ramadhani
+Ariqq16 = Mohammad Ariq Baihaqi
 CresentCrysy = Raymon Devtant 
