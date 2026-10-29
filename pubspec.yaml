@@ -50,6 +50,7 @@ dependencies:
   flutter_riverpod: ^2.6.1
   tflite_flutter: ^0.12.1
   image: 4.9.2
+  flutter_svg: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -82,7 +83,7 @@ flutter:
     - assets/models/model_metadata.json
     - assets/models/landmark_references.json
     - assets/signs/
-
+    - assets/badges/
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 
