@@ -134,8 +134,12 @@ https://www.figma.com/design/SewQENN5995xunTwIdynXo/Sign-Language----F?node-id=0
 https://huggingface.co/datasets/Marxulia/asl_sign_languages_alphabets_v03
 https://www.kaggle.com/datasets/datamunge/sign-language-mnist
 
+# Link percobaan training : 
+https://github.com/SahrulRamadhani29/Sign-Language_Machine-Learning
+https://github.com/rhmau1/PBL_SEMESTER5
+
 # User github :
-rhmau1 = Rahma
-silvatria = Silva
-SahrulRamadhani29 = Sahrul
+rhmau1 = Fijriati Rahmatur Rizqi
+silvatria = Silva Tria Alfares
+SahrulRamadhani29 = Sahrul Ramadhani
 CresentCrysy = Raymon Devtant 
