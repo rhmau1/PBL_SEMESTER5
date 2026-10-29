@@ -127,5 +127,15 @@ Catatan penggabungan tersedia di [MERGE_NOTES.md](MERGE_NOTES.md).
 Tes otomatis memeriksa logika dan pengolahan data; tes tersebut tidak
 membuktikan bahwa prediksi semua huruf di kamera nyata sudah akurat.
 
-Link Figma :
+# Link Figma :
 https://www.figma.com/design/SewQENN5995xunTwIdynXo/Sign-Language----F?node-id=0-1&t=NdBmrhNT66jatJ47-0
+
+# Link Dataset yang digunakan untuk training model :
+https://huggingface.co/datasets/Marxulia/asl_sign_languages_alphabets_v03
+https://www.kaggle.com/datasets/datamunge/sign-language-mnist
+
+# User github :
+rhmau1 = Rahma
+silvatria = Silva
+SahrulRamadhani29 = Sahrul
+CresentCrysy = Raymon Devtant 
