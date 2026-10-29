@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'guide_page.dart';
-
+import 'learning_progress_page.dart';
 class HomePage extends StatelessWidget {
   const HomePage({
     super.key,
@@ -29,6 +29,7 @@ class HomePage extends StatelessWidget {
           children: [
             _HomeHeader(
               onOpenGuide: () => _openGuide(context),
+              onOpenProgress: () => _openProgress(context),
             ),
             Expanded(
               child: ListView(
@@ -82,7 +83,26 @@ class HomePage extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  _ImageAction(onTap: onUploadTap, ink: _ink, blue: _blue),
+                  _ImageAction(
+                    onTap: onUploadTap,
+                    ink: _ink,
+                    blue: _blue,
+                    muted: _muted,
+                  ),
+                  const SizedBox(height: 12),
+                  _GamificationAction(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LearningProgressPage(
+                          onContinueLearning: () => onNavigate(1),
+                        ),
+                      ),
+                    ),
+                    ink: _ink,
+                    blue: _blue,
+                    muted: _muted,
+                  ),
                   const SizedBox(height: 12),
                   _GuideAction(
                     onTap: () => _openGuide(context),
@@ -94,6 +114,17 @@ class HomePage extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _openProgress(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LearningProgressPage(
+          onContinueLearning: () => onNavigate(1),
         ),
       ),
     );
@@ -114,9 +145,14 @@ class HomePage extends StatelessWidget {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({required this.onOpenGuide});
+  const _HomeHeader({
+    required this.onOpenGuide,
+    required this.onOpenProgress,
+  });
 
   final VoidCallback onOpenGuide;
+  final VoidCallback onOpenProgress;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -147,6 +183,22 @@ class _HomeHeader extends StatelessWidget {
                   style: TextStyle(color: HomePage._muted, fontSize: 14),
                 ),
               ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Progres Belajar & Badges',
+            onPressed: onOpenProgress,
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: HomePage._paleBlue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.military_tech_rounded,
+                color: HomePage._blue,
+                size: 20,
+              ),
             ),
           ),
           IconButton(
@@ -398,29 +450,31 @@ class _ImageAction extends StatelessWidget {
     required this.onTap,
     required this.ink,
     required this.blue,
+    this.muted = const Color(0xFF7585A2),
   });
 
   final VoidCallback onTap;
   final Color ink;
   final Color blue;
+  final Color muted;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: HomePage._paleBlue,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(22),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(22),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
               Container(
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: HomePage._paleBlue,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
@@ -431,15 +485,30 @@ class _ImageAction extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  'Deteksi dari upload',
-                  style: TextStyle(
-                    color: ink,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Deteksi dari upload',
+                      style: TextStyle(
+                        color: ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Unggah foto tangan dari galeri',
+                      style: TextStyle(
+                        color: muted,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(width: 8),
               Icon(Icons.arrow_forward_rounded, color: blue, size: 23),
             ],
           ),
@@ -503,6 +572,79 @@ class _GuideAction extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       'Fitur deteksi, 24 huruf, dan tips akurasi',
+                      style: TextStyle(
+                        color: muted,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.arrow_forward_rounded, color: blue, size: 23),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GamificationAction extends StatelessWidget {
+  const _GamificationAction({
+    required this.onTap,
+    required this.ink,
+    required this.blue,
+    required this.muted,
+  });
+
+  final VoidCallback onTap;
+  final Color ink;
+  final Color blue;
+  final Color muted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: HomePage._paleBlue,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  Icons.military_tech_rounded,
+                  color: blue,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Progres Belajar & Badges',
+                      style: TextStyle(
+                        color: ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Streak latihan, huruf dicoba, & 5 badges',
                       style: TextStyle(
                         color: muted,
                         fontSize: 12,
