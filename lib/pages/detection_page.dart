@@ -70,7 +70,7 @@ class _DetectionPageState extends State<DetectionPage> {
       selected: {_selectedTab},
       onSelectionChanged: _busy
           ? null
-          : (selection) => setState(() => _selectedTab = selection.single),
+          : (selection) => _setTab(selection.single),
       style: ButtonStyle(
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(horizontal: 14, vertical: 13),

@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 
+import 'guide_page.dart';
+
 class HomePage extends StatelessWidget {
   const HomePage({
     super.key,
     required this.onNavigate,
     required this.onUploadTap,
+    this.onOpenGuide,
   });
 
   final ValueChanged<int> onNavigate;
   final VoidCallback onUploadTap;
+  final VoidCallback? onOpenGuide;
 
   static const _ink = Color(0xFF172642);
   static const _muted = Color(0xFF7585A2);
@@ -23,7 +27,9 @@ class HomePage extends StatelessWidget {
         bottom: false,
         child: Column(
           children: [
-            const _HomeHeader(),
+            _HomeHeader(
+              onOpenGuide: () => _openGuide(context),
+            ),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -77,6 +83,13 @@ class HomePage extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   _ImageAction(onTap: onUploadTap, ink: _ink, blue: _blue),
+                  const SizedBox(height: 12),
+                  _GuideAction(
+                    onTap: () => _openGuide(context),
+                    ink: _ink,
+                    blue: _blue,
+                    muted: _muted,
+                  ),
                 ],
               ),
             ),
@@ -85,11 +98,25 @@ class HomePage extends StatelessWidget {
       ),
     );
   }
+
+  void _openGuide(BuildContext context) {
+    if (onOpenGuide != null) {
+      onOpenGuide!();
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GuidePage(onNavigate: onNavigate),
+        ),
+      );
+    }
+  }
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader();
+  const _HomeHeader({required this.onOpenGuide});
 
+  final VoidCallback onOpenGuide;
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -99,22 +126,44 @@ class _HomeHeader extends StatelessWidget {
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xFFE8EDF5))),
       ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(
-            'LatihIsyarat',
-            style: TextStyle(
-              color: HomePage._ink,
-              fontSize: 25,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.6,
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'LatihIsyarat',
+                  style: TextStyle(
+                    color: HomePage._ink,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Belajar isyarat, bangun koneksi.',
+                  style: TextStyle(color: HomePage._muted, fontSize: 14),
+                ),
+              ],
             ),
           ),
-          SizedBox(height: 3),
-          Text(
-            'Belajar isyarat, bangun koneksi.',
-            style: TextStyle(color: HomePage._muted, fontSize: 14),
+          IconButton(
+            tooltip: 'Panduan Penggunaan',
+            onPressed: onOpenGuide,
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: HomePage._paleBlue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.help_outline_rounded,
+                color: HomePage._blue,
+                size: 20,
+              ),
+            ),
           ),
         ],
       ),
@@ -130,7 +179,7 @@ class _WelcomeBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 160,
+      constraints: const BoxConstraints(minHeight: 160),
       padding: const EdgeInsets.fromLTRB(20, 20, 12, 20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -391,6 +440,79 @@ class _ImageAction extends StatelessWidget {
                   ),
                 ),
               ),
+              Icon(Icons.arrow_forward_rounded, color: blue, size: 23),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GuideAction extends StatelessWidget {
+  const _GuideAction({
+    required this.onTap,
+    required this.ink,
+    required this.blue,
+    required this.muted,
+  });
+
+  final VoidCallback onTap;
+  final Color ink;
+  final Color blue;
+  final Color muted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: HomePage._paleBlue,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(
+                  Icons.auto_stories_rounded,
+                  color: blue,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Panduan Penggunaan',
+                      style: TextStyle(
+                        color: ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Fitur deteksi, 24 huruf, dan tips akurasi',
+                      style: TextStyle(
+                        color: muted,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
               Icon(Icons.arrow_forward_rounded, color: blue, size: 23),
             ],
           ),
