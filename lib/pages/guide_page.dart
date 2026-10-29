@@ -149,6 +149,45 @@ class GuidePage extends StatelessWidget {
               description:
                   'Menampilkan contoh visual bentuk dan posisi jari tangan untuk seluruh huruf dari A sampai Z. Dilengkapi petunjuk deskriptif cara membentuk setiap huruf sebagai referensi belajar Anda.',
             ),
+            const SizedBox(height: 14),
+
+            // Fitur 6: Gamifikasi & Badges
+            _FeatureCard(
+              icon: Icons.military_tech_rounded,
+              iconColor: const Color(0xFFE67E22),
+              iconBgColor: const Color(0xFFFFF7E6),
+              title: 'Sistem Gamifikasi & Koleksi Badges',
+              description:
+                  'Aplikasi mencatat secara lokal berapa kali Anda mencoba dan huruf apa saja yang telah dipelajari. Dapatkan badges prestasi sesuai tingkat penguasaan Anda:',
+              subItems: const [
+                _SubItemData(
+                  title: 'Keep learning',
+                  description:
+                      'Didapat setelah menyelesaikan sesi latihan/deteksi pertama kali.',
+                ),
+                _SubItemData(
+                  title: 'Good',
+                  description:
+                      'Didapat saat sudah mencoba dan mempelajari minimal 5 huruf berbeda.',
+                ),
+                _SubItemData(
+                  title: 'Excellent',
+                  description:
+                      'Didapat saat sudah mencoba dan mempelajari minimal 15 huruf alfabet.',
+                ),
+                _SubItemData(
+                  title: 'Perfect',
+                  description:
+                      'Didapat saat sudah melatih seluruh 24 huruf alfabet yang didukung.',
+                ),
+                _SubItemData(
+                  title: 'Impossible (Tingkat Tertinggi)',
+                  description:
+                      'Didapat jika berhasil menguasai seluruh huruf sekaligus mencapai 7-day streak latihan berturut-turut.',
+                  isHighlight: true,
+                ),
+              ],
+            ),
             const SizedBox(height: 24),
 
             // Disclaimer & Akurasi
