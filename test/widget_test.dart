@@ -86,6 +86,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Home upload action opens the Upload detection mode', (
+    tester,
+  ) async {
+    await _showApp(tester);
+    final uploadAction = find.text('Deteksi dari upload');
+    await tester.drag(find.byType(ListView), const Offset(0, -350));
+    await tester.pumpAndSettle();
+    await tester.tap(uploadAction);
+    await tester.pumpAndSettle();
+    expect(find.byType(CameraScreen), findsNothing);
+    expect(find.text('Uji Gambar'), findsOneWidget);
+    expect(find.text('Upload'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Kamus uses hand photos and opens letter instructions', (
     tester,
   ) async {

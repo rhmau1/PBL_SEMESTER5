@@ -52,10 +52,12 @@ void main() {
     (tester) async {
       final saved = <HistoryItem>[];
       final busy = <bool>[];
+      final pickerModes = <bool>[];
       await tester.pumpWidget(
         host(
           UploadScreen(
             pickFiles: (multiple) async {
+              pickerModes.add(multiple);
               expect(multiple, isTrue);
               return [XFile('a.png'), XFile('b.png'), XFile('c.png')];
             },
@@ -72,7 +74,15 @@ void main() {
       );
       await tester.tap(find.text('Banyak gambar'));
       await tester.pumpAndSettle();
+      expect(pickerModes, isEmpty);
+      await tester.tap(find.text('Pilih banyak gambar'));
+      await tester.pumpAndSettle();
       expect(find.text('AC'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Belum yakin (B)'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Belum yakin (B)'), findsOneWidget);
       expect(saved.map((item) => item.gesture), ['A', 'C']);
       expect(saved.map((item) => item.imagePath), [
@@ -92,7 +102,10 @@ void main() {
       await tester.pumpWidget(
         host(
           UploadScreen(
-            pickFiles: (_) async => [XFile('a.png')],
+            pickFiles: (multiple) async {
+              expect(multiple, isFalse);
+              return [XFile('a.png')];
+            },
             classifyFile: (_) async => prediction('A', 0.95),
             saveImage: (file) async => file.path,
             onResultSaved: (_) async => throw StateError('database penuh'),
@@ -102,11 +115,17 @@ void main() {
       );
       await tester.tap(find.text('Satu gambar'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Pilih gambar tangan'));
+      await tester.pumpAndSettle();
       expect(find.textContaining('Riwayat belum tersimpan:'), findsOneWidget);
       expect(find.text('Keyakinan 95.0%'), findsOneWidget);
       expect(busy, [true, false]);
       expect(
-        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Pilih gambar tangan'),
+            )
+            .onPressed,
         isNotNull,
       );
       expect(tester.takeException(), isNull);
@@ -121,7 +140,10 @@ void main() {
     await tester.pumpWidget(
       host(
         UploadScreen(
-          pickFiles: (_) async => [XFile('a.png')],
+          pickFiles: (multiple) async {
+            expect(multiple, isFalse);
+            return [XFile('a.png')];
+          },
           classifyFile: (_) => pending.future,
           saveImage: (file) async => file.path,
           onResultSaved: (item) async => saved.add(item),
@@ -129,6 +151,8 @@ void main() {
       ),
     );
     await tester.tap(find.text('Satu gambar'));
+    await tester.pump();
+    await tester.tap(find.text('Pilih gambar tangan'));
     await tester.pump();
     await tester.pumpWidget(const SizedBox());
     pending.complete(prediction('A', 0.95));
