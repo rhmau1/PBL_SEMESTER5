@@ -1,5 +1,7 @@
 # Hasil training 1 November 2026
 
+Laporan ini berfokus pada benchmark Sign Language MNIST untuk CNN 24 huruf dan eksperimen gerakan J/Z. Hasil MNIST tidak mewakili akurasi seluruh foto nyata atau kamera HP.
+
 Training selesai dalam 47 menit 39 detik, termasuk unduhan, evaluasi, dan pemrosesan data. CNN 24 huruf tetap sama dengan model aplikasi. Model baru yang dilatih adalah GRU untuk gerakan J, Z, dan OTHER.
 
 ## Metode dan data
@@ -14,17 +16,14 @@ Dataset SigNN berisi 712 video, dibagi menjadi 500 training, 106 validation, dan
 | --- | ---: | ---: | ---: | ---: |
 | CNN, official test MNIST | 7.172 gambar | 7.171 | 1 | 0 |
 | GRU, video asli J/Z | 106 video | 99 | 0 | 7 |
-| CNN, diagnostik foto Hugging Face | 10.033 foto | 2.239 | 791 | 7.003 |
 
-![Jumlah prediksi benar, salah, dan ditolak](bukti/RINGKASAN_PREDIKSI.png)
+![Jumlah prediksi MNIST dan J/Z yang benar, salah, dan ditolak](bukti/RINGKASAN_MNIST_JZ.png)
 
 CNN mencapai **99,986% pada MNIST**. Satu kesalahan adalah huruf G yang diprediksi T. Model lama tidak dilatih ulang dan hash-nya tetap sama.
 
 GRU mengenali **43 J dan 56 Z dengan benar**, sehingga akurasi pada 99 video yang berhasil diproses adalah **100%**. Empat video J dan tiga video Z gagal ekstraksi. Jika seluruh 106 video dihitung, keberhasilan alurnya **93,40%**.
 
 OTHER menghasilkan 99 prediksi benar dari 99 sampel sintetis berdasarkan kelas dengan skor tertinggi. Sampel ini turunan video test, bukan 99 video negatif nyata. Kemampuan menolak gerakan biasa belum terukur.
-
-Pada Hugging Face, 3.030 prediksi diterima dan 2.239 benar, yaitu **73,89% dari prediksi yang diterima**. Foto yang ditolak tetap dihitung pada tabel. Sumber ini pernah dipakai dalam training lama, sehingga hasilnya merupakan diagnostik, bukan test eksternal independen atau ukuran akurasi kamera HP.
 
 ## Ukuran dan status model
 
@@ -44,9 +43,7 @@ Ekspor J/Z float16 cocok 100% dengan label Keras pada 128 sampel validation. Has
 | [Confusion matrix J/Z](bukti/JZ_confusion_matrix.png) | 43 J, 56 Z, dan 99 OTHER sintetis, tanpa salah klasifikasi |
 | [Confusion matrix MNIST](bukti/CNN_MNIST_confusion_matrix.png) | Kesalahan per huruf pada 7.172 gambar |
 | [Contoh satu kesalahan MNIST](bukti/MNIST_SATU_KESALAHAN.png) | Gambar asli berlabel G yang diprediksi T |
-| [Confusion matrix Hugging Face](bukti/CNN_HF_confusion_matrix.png) | Kesalahan dan penolakan per huruf |
-| [Contoh crop](bukti/CNN_contoh_crop.png) | Foto asli dan gambar yang disiapkan untuk CNN |
-| [Prediksi MNIST](bukti/CNN_MNIST_predictions.csv), [J/Z](bukti/JZ_test_predictions.csv), [Hugging Face](bukti/CNN_HF_predictions.csv) | Catatan prediksi per sampel |
+| [Prediksi MNIST](bukti/CNN_MNIST_predictions.csv), [J/Z](bukti/JZ_test_predictions.csv) | Catatan prediksi per sampel |
 | [Deteksi video](bukti/JZ_video_detection_coverage.csv) | Video yang lolos atau gagal beserta alasannya |
 
 Angka bersumber dari ZIP `training_20261101_100558_262805_utc_596593ce_LENGKAP.zip`. File JSON/CSV asli disertakan dalam `bukti/`, dengan pemetaan sumber dan hash di [ASAL_BUKTI.csv](bukti/ASAL_BUKTI.csv). Gambar ringkasan dan contoh kesalahan MNIST dibuat dari data asli serta prediksi tersimpan. Bukti ini tidak menggantikan pengujian aplikasi di HP.
