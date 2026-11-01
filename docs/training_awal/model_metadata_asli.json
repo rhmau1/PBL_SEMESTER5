@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "model_name": "LatihIsyarat - camera-domain robust",
+  "model_version": "camera_robust_v1",
+  "input_contract": {
+    "shape": [
+      1,
+      28,
+      28,
+      1
+    ],
+    "dtype": "float32",
+    "value_range_before_model": [
+      0.0,
+      255.0
+    ],
+    "color_space": "grayscale",
+    "normalization": "Rescaling(1/255) inside the model",
+    "mobile_must_divide_by_255": false
+  },
+  "output_contract": {
+    "shape": [
+      1,
+      24
+    ],
+    "dtype": "float32",
+    "labels": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+      "K",
+      "L",
+      "M",
+      "N",
+      "O",
+      "P",
+      "Q",
+      "R",
+      "S",
+      "T",
+      "U",
+      "V",
+      "W",
+      "X",
+      "Y"
+    ]
+  },
+  "training_data": {
+    "sign_mnist_rows": 27455,
+    "augmented_sign_mnist_rows": 109820,
+    "real_photos_train": 7633,
+    "real_photos_test": 2400,
+    "total_rows": 132719,
+    "augmentation": "polarity flip, 55-100% hand scale, random background with guaranteed contrast, rotation/shear, gamma, blur, noise"
+  },
+  "metrics": {
+    "clean": {
+      "accuracy": 0.9998605688789738,
+      "mean_confidence": 0.998591959476471
+    },
+    "camera_sim": {
+      "accuracy": 0.8676798661461238,
+      "mean_confidence": 0.8876750469207764
+    },
+    "real_photos": {
+      "accuracy": 0.4426388888888889,
+      "mean_confidence": 0.45473384857177734
+    }
+  },
+  "tflite": {
+    "path": "model_float16.tflite",
+    "quantization": "float16_weights",
+    "size_bytes": 326108,
+    "sha256": "74f52ab0d6f091b37600ce65c4b7797a102c6e26112b6c2e4824483b168140bc",
+    "keras_tflite_label_agreement": 1.0,
+    "maximum_absolute_score_difference": 0.0027862489223480225
+  },
+  "camera_warning": "Angka real_photos adalah foto webcam, bukan kamera HP. Ukur ulang di HP sebelum menyimpulkan akurasi."
+}
