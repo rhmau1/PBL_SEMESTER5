@@ -1,0 +1,54 @@
+{
+  "mnist": {
+    "source": "https://www.kaggle.com/datasets/datamunge/sign-language-mnist",
+    "version": 1,
+    "file": "MNIST/sign_language_mnist_original_csv.zip",
+    "size_bytes": 29736347,
+    "sha256": "a25458c9783565df8a615e6f4083714a62849ad58397b5f73ae1d7e992704dae",
+    "packaging": "Repacked with only two original CSVs; CSV bytes match training run",
+    "csvs": [
+      {
+        "name": "sign_mnist_train.csv",
+        "rows": 27455,
+        "size_bytes": 83281065,
+        "sha256": "4c2897f19fab2b0ae2a7e4fa82e969043315d9f3a1a9cc0948b576bf1189a7e5"
+      },
+      {
+        "name": "sign_mnist_test.csv",
+        "rows": 7172,
+        "size_bytes": 21777485,
+        "sha256": "0e9d67bae23e67f40728e0b63bf15ad4bd5175947b8a9fac5dd9f17ce133c47b"
+      }
+    ]
+  },
+  "hugging_face": {
+    "source": "https://huggingface.co/datasets/Marxulia/asl_sign_languages_alphabets_v03",
+    "revision_reported": "1adf43b2d31eb9d7aea5855edaeac0231d8a2757",
+    "download_url": "https://huggingface.co/datasets/Marxulia/asl_sign_languages_alphabets_v03/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet",
+    "file": "HUGGING_FACE/hf_asl_alphabets_v03_train_0000.parquet",
+    "size_bytes": 74234826,
+    "sha256": "a2211d863e15846bbad01bec5137c161262ae3eaf29ad8debd96490c15ebfcd6",
+    "photos_total": 10873,
+    "labels_total": 26,
+    "supported_static_photos_excluding_J_Z": 10033,
+    "diagnostic_is_independent_new_test": false
+  },
+  "j_z": {
+    "source": "https://www.kaggle.com/datasets/signnteam/asl-sign-language-alphabet-videos-j-z",
+    "version": 1,
+    "original_videos": 712,
+    "original_videos_total_bytes": 4226112284,
+    "raw_videos_included": false,
+    "file": "J_Z/sequence_features_and_labels.npz",
+    "size_bytes": 14808278,
+    "sha256": "838f7203d4b77145645c468d4389cd62ff61047c672157d15e00e32938b624dd",
+    "shape": [1320, 48, 64],
+    "arrays": ["x", "y", "split", "synthetic"],
+    "splits": {"train": 922, "validation": 200, "test": 198},
+    "original_usable_sequences": 660,
+    "synthetic_OTHER_sequences": 660,
+    "real_negative_videos": 0,
+    "split_seed": 2026,
+    "preserved_original_training_features": true
+  }
+}
