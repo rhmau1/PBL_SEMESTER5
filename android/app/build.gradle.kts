@@ -55,5 +55,6 @@ flutter {
 dependencies {
     // App-owned preview bridge reads CameraX's actual surface transform.
     implementation("androidx.camera:camera-core:1.6.1")
+    implementation("com.google.mediapipe:tasks-vision:1.0.0")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
 }

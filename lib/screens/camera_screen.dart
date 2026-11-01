@@ -14,7 +14,7 @@ import '../models/sign_prediction.dart';
 import '../services/camera_preview_size.dart';
 import '../services/image_preprocessor.dart';
 import '../services/sign_classifier.dart';
-import '../widgets/session_result_sheet.dart';
+import '../widgets/full_bleed_camera_preview.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({
@@ -38,8 +38,6 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  static const Color _homeGreen = Color(0xFF2E7D32);
-
   static const _handDetectionInterval = Duration(milliseconds: 320);
   static const _analysisInterval = Duration(milliseconds: 260);
   static const _minimumConfidence = 0.60;
@@ -852,6 +850,14 @@ class _CameraScreenState extends State<CameraScreen>
     final displayedPredictions = target.isEmpty
         ? _sessionLetters
         : _validationPredictions;
+    final sequence = displayedPredictions.join();
+    final validationTotal = _validationPredictions.length;
+    final validationCorrect = _validationPredictions
+        .where((label) => label == target)
+        .length;
+    final validationAccuracy = validationTotal == 0
+        ? 0.0
+        : validationCorrect / validationTotal * 100;
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -1417,24 +1423,19 @@ class _CameraScreenState extends State<CameraScreen>
                     height: 56,
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        backgroundColor: _homeGreen,
+                        backgroundColor: const Color(0xFF2864F0),
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: _homeGreen.withValues(
-                          alpha: 0.5,
-                        ),
+                        disabledBackgroundColor: const Color(0xFF2864F0)
+                            .withValues(alpha: 0.5),
                         disabledForegroundColor: Colors.white70,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(17),
+                        ),
                       ),
                       onPressed:
                           !busy && (_controller?.value.isInitialized ?? false)
                           ? _takePhoto
                           : null,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2864F0),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(17),
-                        ),
-                      ),
                       icon: const Icon(Icons.camera_alt_rounded),
                       label: Text(
                         _isTakingPhoto ? 'Mengambil foto...' : 'Ambil foto',
