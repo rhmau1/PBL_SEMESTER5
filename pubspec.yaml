@@ -82,6 +82,7 @@ flutter:
     - assets/models/labels.json
     - assets/models/model_metadata.json
     - assets/models/landmark_references.json
+    - assets/models/jz/
     - assets/signs/
     - assets/badges/
   # An image asset can refer to one or more resolution-specific "variants", see

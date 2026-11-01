@@ -38,6 +38,8 @@ void main() {
     );
     await tester.tap(find.text('Banyak gambar'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Pilih banyak gambar'));
+    await tester.pumpAndSettle();
     expect(find.textContaining('Tangan tidak terdeteksi'), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('upload-letters'))).data,
