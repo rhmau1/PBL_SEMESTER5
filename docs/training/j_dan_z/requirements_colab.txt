@@ -1,0 +1,12 @@
+# TensorFlow GPU disediakan runtime Colab. Versi aktual dicatat di hasil.
+# MediaPipe ini mempunyai wheel Linux generik Python 3 untuk Colab modern.
+mediapipe==0.10.32
+opencv-contrib-python==4.11.0.86
+kagglehub==0.3.13
+numpy>=1.26,<2.3
+pandas>=2.2,<3
+pyarrow>=19,<24
+scikit-learn>=1.6,<2
+matplotlib>=3.9,<4
+Pillow>=11,<13
+requests>=2.32,<3
