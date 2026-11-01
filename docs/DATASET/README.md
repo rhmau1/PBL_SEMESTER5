@@ -3,7 +3,7 @@
 | Folder | Isi yang disertakan | Penggunaan |
 | --- | --- | --- |
 | `MNIST/` | ZIP berisi CSV asli, 27.455 gambar training dan 7.172 gambar test | Training CNN sebelumnya dan evaluasi ulang model 24 huruf |
-| `HUGGING_FACE/` | Parquet asli berisi 10.873 foto dengan 26 label | Sumber foto pada training CNN sebelumnya dan diagnostik terbaru pada 10.033 foto selain J/Z |
+| `HUGGING_FACE/` | Parquet asli berisi 10.873 foto dengan 26 label | Sumber foto tambahan untuk training CNN 24 huruf |
 | `J_Z/` | Dataset fitur sebenarnya, 1.320 urutan landmark beserta label dan pembagian data | Training, validation, serta test GRU J/Z/OTHER |
 
 Ekstrak ZIP MNIST untuk memperoleh dua CSV. Parquet Hugging Face menyimpan gambar dan label dalam satu tabel. File `sequence_features_and_labels.npz` berisi input GRU: 922 sampel training, 200 validation, dan 198 test. Separuh sampelnya adalah OTHER sintetis yang dibuat dari posisi tangan pada video sumber.

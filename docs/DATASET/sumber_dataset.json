@@ -31,7 +31,7 @@
     "photos_total": 10873,
     "labels_total": 26,
     "supported_static_photos_excluding_J_Z": 10033,
-    "diagnostic_is_independent_new_test": false
+    "documentation_role": "Additional photo source for CNN training"
   },
   "j_z": {
     "source": "https://www.kaggle.com/datasets/signnteam/asl-sign-language-alphabet-videos-j-z",

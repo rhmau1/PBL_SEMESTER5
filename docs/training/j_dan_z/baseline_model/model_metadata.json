@@ -67,10 +67,6 @@
     "camera_sim": {
       "accuracy": 0.8676798661461238,
       "mean_confidence": 0.8876750469207764
-    },
-    "real_photos": {
-      "accuracy": 0.4426388888888889,
-      "mean_confidence": 0.45473384857177734
     }
   },
   "tflite": {
@@ -81,5 +77,5 @@
     "keras_tflite_label_agreement": 1.0,
     "maximum_absolute_score_difference": 0.0027862489223480225
   },
-  "camera_warning": "Angka real_photos adalah foto webcam, bukan kamera HP. Ukur ulang di HP sebelum menyimpulkan akurasi."
+  "camera_warning": "Metrik dataset tidak menggantikan pengujian kamera HP."
 }
