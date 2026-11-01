@@ -1,0 +1,388 @@
+{
+  "task": "temporal_J_Z_OTHER",
+  "architecture": "GRU64_Dense32",
+  "parameter_count": 27139,
+  "seed": 42,
+  "best_epoch": 60,
+  "epochs_completed": 60,
+  "best_validation_loss": 0.0015009489143267274,
+  "dataset": {
+    "source": "signnteam/asl-sign-language-alphabet-videos-j-z",
+    "source_url": "https://www.kaggle.com/datasets/signnteam/asl-sign-language-alphabet-videos-j-z",
+    "provider_license": "CC0 Public Domain (according to Kaggle metadata)",
+    "dataset_dir": "/content/drive/MyDrive/LatihIsyarat_Training_J_Z/datasets/kagglehub/datasets/signnteam/asl-sign-language-alphabet-videos-j-z/versions/1",
+    "raw_files_found": 712,
+    "unique_videos": 712,
+    "exact_duplicate_files_removed": 0,
+    "unique_video_classes": {
+      "J": 316,
+      "Z": 396
+    },
+    "split_counts": {
+      "train": {
+        "J": 222,
+        "Z": 278
+      },
+      "validation": {
+        "J": 47,
+        "Z": 59
+      },
+      "test": {
+        "J": 47,
+        "Z": 59
+      }
+    },
+    "split_seed": 2026,
+    "split_unit": "original video group, before extraction/augmentation",
+    "signer_independence": false,
+    "signer_limitation": "SigNN manifest does not provide verified signer IDs. Byte-identical videos are grouped, but different recordings/re-encodings of one signer may cross splits. Real negative session folders are grouped when provided.",
+    "manifest_fingerprint": "2f8c4d7210bd691f204b32b18dc055960b7f056fb83cd74bf488492b274c8a23"
+  },
+  "source_video_coverage": [
+    {
+      "split": "train",
+      "label": "J",
+      "original_videos": 222,
+      "accepted_videos": 210,
+      "rejected_videos": 12,
+      "coverage": 0.9459459459459459,
+      "mean_detection_fraction": 0.9697672672672674
+    },
+    {
+      "split": "train",
+      "label": "Z",
+      "original_videos": 278,
+      "accepted_videos": 251,
+      "rejected_videos": 27,
+      "coverage": 0.9028776978417267,
+      "mean_detection_fraction": 0.9370491627533113
+    },
+    {
+      "split": "train",
+      "label": "OTHER",
+      "original_videos": 0,
+      "accepted_videos": 0,
+      "rejected_videos": 0,
+      "coverage": null,
+      "mean_detection_fraction": null
+    },
+    {
+      "split": "validation",
+      "label": "J",
+      "original_videos": 47,
+      "accepted_videos": 46,
+      "rejected_videos": 1,
+      "coverage": 0.9787234042553191,
+      "mean_detection_fraction": 0.9809132760980465
+    },
+    {
+      "split": "validation",
+      "label": "Z",
+      "original_videos": 59,
+      "accepted_videos": 54,
+      "rejected_videos": 5,
+      "coverage": 0.9152542372881356,
+      "mean_detection_fraction": 0.9451418727384858
+    },
+    {
+      "split": "validation",
+      "label": "OTHER",
+      "original_videos": 0,
+      "accepted_videos": 0,
+      "rejected_videos": 0,
+      "coverage": null,
+      "mean_detection_fraction": null
+    },
+    {
+      "split": "test",
+      "label": "J",
+      "original_videos": 47,
+      "accepted_videos": 43,
+      "rejected_videos": 4,
+      "coverage": 0.9148936170212766,
+      "mean_detection_fraction": 0.9604728132387709
+    },
+    {
+      "split": "test",
+      "label": "Z",
+      "original_videos": 59,
+      "accepted_videos": 56,
+      "rejected_videos": 3,
+      "coverage": 0.9491525423728814,
+      "mean_detection_fraction": 0.9657011200158268
+    },
+    {
+      "split": "test",
+      "label": "OTHER",
+      "original_videos": 0,
+      "accepted_videos": 0,
+      "rejected_videos": 0,
+      "coverage": null,
+      "mean_detection_fraction": null
+    }
+  ],
+  "test_with_synthetic_idle": {
+    "samples": 198,
+    "accuracy": 1.0,
+    "macro_precision": 1.0,
+    "macro_recall": 1.0,
+    "macro_f1": 1.0,
+    "macro_average_definition": "all declared output classes",
+    "evaluated_true_labels": [
+      "J",
+      "Z",
+      "OTHER"
+    ],
+    "macro_precision_present_classes": 1.0,
+    "macro_recall_present_classes": 1.0,
+    "macro_f1_present_classes": 1.0,
+    "per_class": {
+      "J": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 43.0
+      },
+      "Z": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 56.0
+      },
+      "OTHER": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 99.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 198.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 198.0
+      }
+    }
+  },
+  "test_real_source_videos_detected_only": {
+    "samples": 99,
+    "accuracy": 1.0,
+    "macro_precision": 0.6666666666666666,
+    "macro_recall": 0.6666666666666666,
+    "macro_f1": 0.6666666666666666,
+    "macro_average_definition": "all declared output classes",
+    "evaluated_true_labels": [
+      "J",
+      "Z"
+    ],
+    "macro_precision_present_classes": 1.0,
+    "macro_recall_present_classes": 1.0,
+    "macro_f1_present_classes": 1.0,
+    "per_class": {
+      "J": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 43.0
+      },
+      "Z": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 56.0
+      },
+      "OTHER": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 0.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.6666666666666666,
+        "support": 99.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 99.0
+      }
+    }
+  },
+  "test_JZ_positive_videos_detected_only": {
+    "samples": 99,
+    "accuracy": 1.0,
+    "macro_precision_JZ": 1.0,
+    "macro_recall_JZ": 1.0,
+    "macro_f1_JZ": 1.0,
+    "OTHER_predictions_count_as_incorrect": true,
+    "scope": "detected, original J/Z videos only; does not measure real negative rejection"
+  },
+  "three_class_macro_note": "Reports using all three labels assign zero precision/recall/F1 to an absent class. Use test_JZ_positive_videos_detected_only for J/Z-only macro scores, and separate real_negative_false_JZ_trigger_rate_at_threshold for recorded negative rejection.",
+  "test_synthetic_idle_only": {
+    "samples": 99,
+    "accuracy": 1.0,
+    "macro_precision": 0.3333333333333333,
+    "macro_recall": 0.3333333333333333,
+    "macro_f1": 0.3333333333333333,
+    "macro_average_definition": "all declared output classes",
+    "evaluated_true_labels": [
+      "OTHER"
+    ],
+    "macro_precision_present_classes": 1.0,
+    "macro_recall_present_classes": 1.0,
+    "macro_f1_present_classes": 1.0,
+    "per_class": {
+      "J": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 0.0
+      },
+      "Z": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 0.0
+      },
+      "OTHER": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 99.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 0.3333333333333333,
+        "recall": 0.3333333333333333,
+        "f1-score": 0.3333333333333333,
+        "support": 99.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 99.0
+      }
+    }
+  },
+  "test_original_video_count": 106,
+  "test_original_video_detection_coverage": 0.9339622641509434,
+  "test_original_video_accuracy_with_detection_failures_as_incorrect": 0.9339622641509434,
+  "confidence_threshold": 0.6,
+  "test_source_decision_coverage_at_threshold": 0.9339622641509434,
+  "test_source_accuracy_among_confident_detected_decisions": 1.0,
+  "real_negative_test_original_videos": 0,
+  "real_negative_test_detected_videos": 0,
+  "real_negative_false_JZ_trigger_rate_at_threshold": null,
+  "target_accuracy": 0.995,
+  "target_met_on_test_with_synthetic_idle": true,
+  "target_met_on_original_test_counting_detection_failures": false,
+  "target_does_not_establish_mobile_readiness": true,
+  "mobile_ready": false,
+  "readiness": "PROVISIONAL_REQUIRES_REAL_NEGATIVE_AND_PHONE_TESTS",
+  "synthetic_other_warning": "Synthetic held poses only teach idle rejection. They are not evidence of rejection of real unrelated movements, transitions, occlusions, or empty camera frames. Record held-out real negatives and unseen users/sessions before mobile integration.",
+  "tflite": {
+    "float32": {
+      "path": "/content/drive/MyDrive/LatihIsyarat_Training_J_Z/hasil/training_20261101_100558_262805_utc_596593ce/dynamic_JZ/models/model_float32.tflite",
+      "size_bytes": 282620,
+      "size_mib": 0.2695274353027344,
+      "sha256": "1115b66bfae281475a054d010d53ec798557ab52de3b60391969b524181a3687",
+      "input_shape": [
+        1,
+        48,
+        64
+      ],
+      "output_shape": [
+        1,
+        3
+      ],
+      "input_dtype": "float32",
+      "output_dtype": "float32",
+      "operators": [
+        "ADD",
+        "DELEGATE",
+        "FILL",
+        "FULLY_CONNECTED",
+        "LOGISTIC",
+        "MUL",
+        "PACK",
+        "SHAPE",
+        "SOFTMAX",
+        "SPLIT",
+        "STRIDED_SLICE",
+        "SUB",
+        "TANH",
+        "TRANSPOSE",
+        "UNPACK"
+      ],
+      "parity_samples": 128,
+      "label_agreement": 1.0,
+      "maximum_absolute_score_difference": 1.1920928955078125e-07,
+      "parity_passed": true,
+      "parity_split": "validation",
+      "validation_sample_accuracy": 1.0
+    },
+    "float16": {
+      "path": "/content/drive/MyDrive/LatihIsyarat_Training_J_Z/hasil/training_20261101_100558_262805_utc_596593ce/dynamic_JZ/models/model_float16.tflite",
+      "size_bytes": 229672,
+      "size_mib": 0.21903228759765625,
+      "sha256": "e2e34dea6a0938e776b4d14117e64953e0ca9f2d853023c58d3087f320cf74e5",
+      "input_shape": [
+        1,
+        48,
+        64
+      ],
+      "output_shape": [
+        1,
+        3
+      ],
+      "input_dtype": "float32",
+      "output_dtype": "float32",
+      "operators": [
+        "ADD",
+        "DELEGATE",
+        "DEQUANTIZE",
+        "FILL",
+        "FULLY_CONNECTED",
+        "LOGISTIC",
+        "MUL",
+        "PACK",
+        "SHAPE",
+        "SOFTMAX",
+        "SPLIT",
+        "STRIDED_SLICE",
+        "SUB",
+        "TANH",
+        "TRANSPOSE",
+        "UNPACK"
+      ],
+      "parity_samples": 128,
+      "label_agreement": 1.0,
+      "maximum_absolute_score_difference": 0.0001017451286315918,
+      "parity_passed": true,
+      "parity_split": "validation",
+      "validation_sample_accuracy": 1.0
+    }
+  },
+  "preprocessing_contract": "/content/drive/MyDrive/LatihIsyarat_Training_J_Z/hasil/training_20261101_100558_262805_utc_596593ce/dynamic_JZ/preprocessing_contract.json",
+  "best_model_path": "/content/drive/MyDrive/LatihIsyarat_Training_J_Z/hasil/training_20261101_100558_262805_utc_596593ce/dynamic_JZ/models/best_model.keras",
+  "no_application_changes": true,
+  "limitations": [
+    "No guaranteed 99.5% or 100%; targets are reported after one final test.",
+    "Public SigNN signer IDs unavailable, so this is not a signer-independent benchmark.",
+    "Clip-level training is not a full streaming gesture start/end detector.",
+    "Single still images cannot establish the temporal motion of J/Z.",
+    "Live sampling and arbitration with the static 24-letter CNN remain future implementation work.",
+    "The supplied .task model is pretrained MediaPipe; this workflow trains the new GRU, not MediaPipe."
+  ]
+}

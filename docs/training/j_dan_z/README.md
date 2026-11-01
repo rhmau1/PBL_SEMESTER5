@@ -11,4 +11,4 @@ Unggah `TRAINING_J_Z_COLAB.ipynb` ke Google Colab, pilih GPU, lalu jalankan **Ru
 | `requirements_colab.txt` | Dependency training |
 | `baseline_model/` | Model 24 huruf, label, dan metadata yang diperlukan skrip |
 
-Kode di folder ini sama dengan kode pada hasil training 1 November 2026. Generator notebook dan tes pengembangan tidak diperlukan untuk menjalankannya.
+Kode training di folder ini sama dengan kode pada hasil training 1 November 2026.

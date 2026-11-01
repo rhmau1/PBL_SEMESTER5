@@ -1,0 +1,225 @@
+{
+  "photos_total": 10033,
+  "detected_one_hand": 7932,
+  "detector_coverage": 0.7905910495365295,
+  "accepted": 3030,
+  "accepted_coverage": 0.3020033888169042,
+  "accepted_correct": 2239,
+  "accepted_accuracy": 0.738943894389439,
+  "end_to_end_correct_over_all_photos": 0.22316356025117112,
+  "raw_fused_accuracy_among_detected": 0.490796772566818,
+  "macro_f1_including_rejections": 0.31390826224872526,
+  "rejection_counts": {
+    "no_hand": 2083,
+    "low_confidence": 4902,
+    "multiple_hands": 18
+  },
+  "min_confidence": 0.6,
+  "fusion_version": "app_context090_blend055_045_disagree059_v1",
+  "detected_only_report": {
+    "samples": 7932,
+    "accuracy": 0.490796772566818,
+    "macro_precision": 0.49021279363963827,
+    "macro_recall": 0.4907647652691643,
+    "macro_f1": 0.4785175901335052,
+    "macro_average_definition": "all declared output classes",
+    "evaluated_true_labels": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+      "K",
+      "L",
+      "M",
+      "N",
+      "O",
+      "P",
+      "Q",
+      "R",
+      "S",
+      "T",
+      "U",
+      "V",
+      "W",
+      "X",
+      "Y"
+    ],
+    "macro_precision_present_classes": 0.49021279363963827,
+    "macro_recall_present_classes": 0.4907647652691643,
+    "macro_f1_present_classes": 0.4785175901335052,
+    "per_class": {
+      "A": {
+        "precision": 0.5520581113801453,
+        "recall": 0.6422535211267606,
+        "f1-score": 0.59375,
+        "support": 355.0
+      },
+      "B": {
+        "precision": 0.5725593667546174,
+        "recall": 0.640117994100295,
+        "f1-score": 0.6044568245125348,
+        "support": 339.0
+      },
+      "C": {
+        "precision": 0.5269230769230769,
+        "recall": 0.4228395061728395,
+        "f1-score": 0.4691780821917808,
+        "support": 324.0
+      },
+      "D": {
+        "precision": 0.6707317073170732,
+        "recall": 0.843558282208589,
+        "f1-score": 0.7472826086956522,
+        "support": 326.0
+      },
+      "E": {
+        "precision": 0.43731778425655976,
+        "recall": 0.4424778761061947,
+        "f1-score": 0.4398826979472141,
+        "support": 339.0
+      },
+      "F": {
+        "precision": 0.5903225806451613,
+        "recall": 0.5446428571428571,
+        "f1-score": 0.56656346749226,
+        "support": 336.0
+      },
+      "G": {
+        "precision": 0.4970414201183432,
+        "recall": 0.5153374233128835,
+        "f1-score": 0.5060240963855421,
+        "support": 326.0
+      },
+      "H": {
+        "precision": 0.4586092715231788,
+        "recall": 0.8368580060422961,
+        "f1-score": 0.5925133689839572,
+        "support": 331.0
+      },
+      "I": {
+        "precision": 0.32558139534883723,
+        "recall": 0.17665615141955837,
+        "f1-score": 0.22903885480572597,
+        "support": 317.0
+      },
+      "K": {
+        "precision": 0.4009009009009009,
+        "recall": 0.260233918128655,
+        "f1-score": 0.31560283687943264,
+        "support": 342.0
+      },
+      "L": {
+        "precision": 0.6299019607843137,
+        "recall": 0.7178770949720671,
+        "f1-score": 0.6710182767624021,
+        "support": 358.0
+      },
+      "M": {
+        "precision": 0.48059701492537316,
+        "recall": 0.46397694524495675,
+        "f1-score": 0.47214076246334313,
+        "support": 347.0
+      },
+      "N": {
+        "precision": 0.32238805970149254,
+        "recall": 0.31671554252199413,
+        "f1-score": 0.31952662721893493,
+        "support": 341.0
+      },
+      "O": {
+        "precision": 0.5209876543209877,
+        "recall": 0.7080536912751678,
+        "f1-score": 0.6002844950213371,
+        "support": 298.0
+      },
+      "P": {
+        "precision": 0.3385012919896641,
+        "recall": 0.40683229813664595,
+        "f1-score": 0.3695345557122708,
+        "support": 322.0
+      },
+      "Q": {
+        "precision": 0.2994652406417112,
+        "recall": 0.4392156862745098,
+        "f1-score": 0.356120826709062,
+        "support": 255.0
+      },
+      "R": {
+        "precision": 0.5336538461538461,
+        "recall": 0.3425925925925926,
+        "f1-score": 0.41729323308270677,
+        "support": 324.0
+      },
+      "S": {
+        "precision": 0.618421052631579,
+        "recall": 0.28059701492537314,
+        "f1-score": 0.3860369609856263,
+        "support": 335.0
+      },
+      "T": {
+        "precision": 0.2773722627737226,
+        "recall": 0.21965317919075145,
+        "f1-score": 0.24516129032258063,
+        "support": 346.0
+      },
+      "U": {
+        "precision": 0.47796610169491527,
+        "recall": 0.42342342342342343,
+        "f1-score": 0.44904458598726116,
+        "support": 333.0
+      },
+      "V": {
+        "precision": 0.6716981132075471,
+        "recall": 0.5297619047619048,
+        "f1-score": 0.5923460898502496,
+        "support": 336.0
+      },
+      "W": {
+        "precision": 0.516260162601626,
+        "recall": 0.774390243902439,
+        "f1-score": 0.6195121951219512,
+        "support": 328.0
+      },
+      "X": {
+        "precision": 0.6133333333333333,
+        "recall": 0.4353312302839117,
+        "f1-score": 0.5092250922509225,
+        "support": 317.0
+      },
+      "Y": {
+        "precision": 0.4325153374233129,
+        "recall": 0.3949579831932773,
+        "f1-score": 0.4128843338213763,
+        "support": 357.0
+      },
+      "accuracy": 0.490796772566818,
+      "macro avg": {
+        "precision": 0.49021279363963827,
+        "recall": 0.4907647652691643,
+        "f1-score": 0.4785175901335052,
+        "support": 7932.0
+      },
+      "weighted avg": {
+        "precision": 0.4919440607087567,
+        "recall": 0.490796772566818,
+        "f1-score": 0.47958520492226925,
+        "support": 7932.0
+      }
+    }
+  },
+  "limitation": "Photo-level benchmark. No temporal stability or unseen-signer guarantee.",
+  "evaluation_role": "Preprocessing diagnostic on ALL deduplicated supported HF photos.",
+  "training_membership_unknown": true,
+  "independent_new_test": false,
+  "original_notebook_hf_counts": {
+    "reported_training_photos": 7633,
+    "reported_test_photos": 2400
+  },
+  "historical_44pct_comparison": "Old result used 2400 photos/7200 heuristic crops. This all-photo MediaPipe diagnostic has a different denominator and is not a direct improvement claim.",
+  "purpose": "Inspect crop failures, confusion, coverage and accepted decisions before considering fine-tuning."
+}
