@@ -746,6 +746,43 @@ void main() {
     await closeScreen(tester);
   });
 
+  testWidgets('a slow history write cannot prevent a second camera release', (
+    tester,
+  ) async {
+    final saveGate = Completer<void>();
+    addTearDown(() {
+      if (!saveGate.isCompleted) saveGate.complete();
+    });
+    await tester.pumpWidget(
+      screen(
+        onSave: (item) async {
+          await saveGate.future;
+          saved.add(item);
+        },
+      ),
+    );
+    await _settle(tester);
+    await tester.tap(find.text('Mulai latihan bebas'));
+    await _settle(tester);
+    await tester.tap(find.text('Mulai J/Z'));
+    await _settle(tester);
+    await tester.tap(find.text('Selesai gerakan'));
+    await _settle(tester);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await _settle(tester);
+    expect(camera.disposals, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _settle(tester);
+    expect(camera.nextCameraId, 2);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await _settle(tester);
+    expect(camera.disposals, 2);
+    saveGate.complete();
+    await _settle(tester);
+    expect(saved.map((item) => item.gesture), ['J']);
+    await closeScreen(tester);
+  });
+
   testWidgets(
     'a failed interrupted-session save is retried without losing the letters',
     (tester) async {

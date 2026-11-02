@@ -113,6 +113,7 @@ class _CameraScreenState extends State<CameraScreen>
   int? _lastJzTimestamp;
   Future<void>? _jzCancellation;
   Future<void>? _jzFinishOperation;
+  Future<void>? _cameraDisposal;
   Future<void>? _interruptedSessionSave;
   HistoryItem? _pendingInterruptedHistory;
   Timer? _jzLimitTimer;
@@ -1414,8 +1415,9 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _disposeCamera() async {
-    final pendingDisposal = _interruptedSessionSave;
+    final pendingDisposal = _cameraDisposal;
     if (pendingDisposal != null) return pendingDisposal;
+    final previousSave = _interruptedSessionSave;
     _cameraGeneration++;
     final interruptedLetters = List<String>.of(_sessionLetters);
     final interruptedConfidences = List<double>.of(_sessionConfidences);
@@ -1436,14 +1438,29 @@ class _CameraScreenState extends State<CameraScreen>
     _isTargetAnalysisActive = false;
     _analysisGeneration++;
     // Enqueue release immediately, before a rapid resume can enqueue an open.
-    final cameraRelease = _queueCameraLifecycle(() async {
-      await motionCancellation;
-      await _releaseCamera();
-    });
+    late final Future<void> cameraRelease;
+    cameraRelease =
+        _queueCameraLifecycle(() async {
+          await motionCancellation;
+          await _releaseCamera();
+        }).whenComplete(() {
+          if (identical(_cameraDisposal, cameraRelease)) _cameraDisposal = null;
+        });
+    _cameraDisposal = cameraRelease;
     late final Future<void> operation;
     operation =
         () async {
           await cameraRelease;
+          // Releasing a resumed camera must not wait for the previous write.
+          // Keep writes serialized separately so a new session cannot retry
+          // the same pending history concurrently.
+          if (previousSave != null) {
+            try {
+              await previousSave;
+            } catch (_) {
+              // The original caller reports the failure. Start will retry it.
+            }
+          }
           if (shouldSaveInterruptedSession) {
             _pendingInterruptedHistory = _pendingInterruptedHistory?.copyWith(
               videoPath: _savedVideoPath,
