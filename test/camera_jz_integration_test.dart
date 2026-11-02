@@ -13,6 +13,7 @@ import 'package:sign_language/models/sign_prediction.dart';
 import 'package:sign_language/screens/camera_screen.dart';
 import 'package:sign_language/services/jz_recognition_service.dart';
 import 'package:sign_language/services/static_camera_pipeline.dart';
+import 'package:sign_language/widgets/app_bottom_nav.dart';
 
 const _front = CameraDescription(
   name: 'front',
@@ -29,6 +30,7 @@ class _Camera extends CameraPlatform {
   var streamStarts = 0;
   var videoStarts = 0;
   var disposals = 0;
+  var nextCameraId = 0;
 
   @override
   Future<List<CameraDescription>> availableCameras() async => cameras;
@@ -37,7 +39,7 @@ class _Camera extends CameraPlatform {
     CameraDescription description,
     ResolutionPreset? resolution, {
     bool enableAudio = false,
-  }) async => 1;
+  }) async => ++nextCameraId;
   @override
   Future<void> initializeCamera(
     int cameraId, {
@@ -58,9 +60,10 @@ class _Camera extends CameraPlatform {
 
   @override
   Stream<CameraInitializedEvent> onCameraInitialized(int cameraId) =>
-      initialized.stream;
+      initialized.stream.where((event) => event.cameraId == cameraId);
   @override
-  Stream<CameraErrorEvent> onCameraError(int cameraId) => errors.stream;
+  Stream<CameraErrorEvent> onCameraError(int cameraId) =>
+      errors.stream.where((event) => event.cameraId == cameraId);
   @override
   Stream<DeviceOrientationChangedEvent> onDeviceOrientationChanged() =>
       const Stream.empty();
@@ -121,7 +124,11 @@ class _Camera extends CameraPlatform {
 
   Future<void> closeStreams() async {
     await initialized.close();
-    errors.add(CameraErrorEvent(1, 'test camera disposed'));
+    // CameraController keeps a .first error listener for each camera it opens.
+    // Complete every listener before closing the fake broadcast stream.
+    for (var id = 1; id <= nextCameraId; id++) {
+      errors.add(CameraErrorEvent(id, 'test camera disposed'));
+    }
     await errors.close();
     await frames.close();
   }
@@ -186,10 +193,12 @@ class _Motion extends JzRecognitionService {
 
 class _Static extends StaticCameraPipeline {
   final observations = StreamController<List<Hand>>.broadcast();
+  final deferredObservations = <List<Hand>>[];
   var starts = 0;
   var detections = 0;
   var classifications = 0;
   bool visible = true;
+  bool deferObservations = false;
   String letter = 'A';
   double confidence = .95;
   Completer<SignPrediction>? predictionGate;
@@ -200,11 +209,14 @@ class _Static extends StaticCameraPipeline {
   @override
   void detectHands(CameraImage image, int rotation) {
     detections++;
-    observations.add(
-      visible
-          ? [Hand(List.generate(21, (i) => Landmark(.3 + i * .01, .5, 0.0)))]
-          : [],
-    );
+    final observation = visible
+        ? [Hand(List.generate(21, (i) => Landmark(.3 + i * .01, .5, 0.0)))]
+        : <Hand>[];
+    if (deferObservations) {
+      deferredObservations.add(observation);
+    } else {
+      observations.add(observation);
+    }
   }
 
   @override
@@ -248,13 +260,21 @@ void main() {
   late List<HistoryItem> saved;
   bool busy = false;
 
-  Widget screen({bool photoMode = false}) => MaterialApp(
+  Widget screen({
+    bool photoMode = false,
+    bool chrome = false,
+    Future<void> Function(HistoryItem)? onSave,
+  }) => MaterialApp(
     home: Scaffold(
+      bottomNavigationBar: chrome
+          ? AppBottomNav(currentIndex: 1, onSelected: (_) {})
+          : null,
       body: CameraScreen(
         photoMode: photoMode,
+        topOverlayHeight: chrome ? 52 : 0,
         jzServiceFactory: () => motion,
         staticPipelineFactory: () => staticPipeline,
-        onResultSaved: (item) async => saved.add(item),
+        onResultSaved: onSave ?? (item) async => saved.add(item),
         onBusyChanged: (value) => busy = value,
       ),
     ),
@@ -579,6 +599,186 @@ void main() {
   );
 
   testWidgets(
+    'late static detector output cannot release the guard after a J/Z clip',
+    (tester) async {
+      await tester.pumpWidget(screen());
+      await _settle(tester);
+      await tester.tap(find.text('Mulai latihan bebas'));
+      await _settle(tester);
+      for (var i = 0; i < 3; i++) {
+        await emitStaticFrame(tester);
+      }
+      expect(staticPipeline.classifications, 2);
+
+      staticPipeline.visible = false;
+      staticPipeline.deferObservations = true;
+      await emitStaticFrame(tester);
+      expect(staticPipeline.deferredObservations, hasLength(1));
+
+      staticPipeline.visible = true;
+      await tester.tap(find.text('Mulai J/Z'));
+      await _settle(tester);
+      await tester.tap(find.text('Selesai gerakan'));
+      await _settle(tester);
+
+      // This result belongs to the request made before the J/Z gesture.
+      staticPipeline.observations.add(
+        staticPipeline.deferredObservations.removeAt(0),
+      );
+      await _settle(tester);
+      staticPipeline.deferObservations = false;
+      staticPipeline.letter = 'I';
+      for (var i = 0; i < 3; i++) {
+        await emitStaticFrame(tester);
+      }
+      await tester.tap(find.text('Akhiri dan lihat hasil'));
+      await _settle(tester);
+      expect(saved.single.gesture, 'AJ');
+      await closeScreen(tester);
+    },
+  );
+
+  testWidgets('background preserves accepted free-session letters in history', (
+    tester,
+  ) async {
+    await tester.pumpWidget(screen());
+    await _settle(tester);
+    await tester.tap(find.text('Mulai latihan bebas'));
+    await _settle(tester);
+    for (var i = 0; i < 3; i++) {
+      await emitStaticFrame(tester);
+    }
+    expect(staticPipeline.classifications, 2);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await _settle(tester);
+    expect(saved.single.gesture, 'A');
+    expect(saved.single.source, 'video');
+    await closeScreen(tester);
+  });
+
+  testWidgets(
+    'background saves a mixed session once and resumes with a fresh session',
+    (tester) async {
+      await tester.pumpWidget(screen());
+      await _settle(tester);
+      await tester.tap(find.text('Mulai latihan bebas'));
+      await _settle(tester);
+      for (var i = 0; i < 3; i++) {
+        await emitStaticFrame(tester);
+      }
+      await tester.tap(find.text('Mulai J/Z'));
+      await _settle(tester);
+      await tester.tap(find.text('Selesai gerakan'));
+      await _settle(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await _settle(tester);
+      expect(saved.map((item) => item.gesture), ['AJ']);
+      expect(tester.takeException(), isNull);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _settle(tester);
+      await tester.tap(find.text('Mulai latihan bebas'));
+      await _settle(tester);
+      await tester.tap(find.text('Akhiri dan lihat hasil'));
+      await _settle(tester);
+      expect(saved.map((item) => item.gesture), ['AJ']);
+      await closeScreen(tester);
+    },
+  );
+
+  testWidgets(
+    'a delayed history save finishes before the next free session starts',
+    (tester) async {
+      final saveGate = Completer<void>();
+      addTearDown(() {
+        if (!saveGate.isCompleted) saveGate.complete();
+      });
+      await tester.pumpWidget(
+        screen(
+          onSave: (item) async {
+            await saveGate.future;
+            saved.add(item);
+          },
+        ),
+      );
+      await _settle(tester);
+      await tester.tap(find.text('Mulai latihan bebas'));
+      await _settle(tester);
+      await tester.tap(find.text('Mulai J/Z'));
+      await _settle(tester);
+      await tester.tap(find.text('Selesai gerakan'));
+      await _settle(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await _settle(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _settle(tester);
+      await tester.tap(find.text('Mulai latihan bebas'));
+      await tester.pump();
+      expect(camera.videoStarts, 1);
+      saveGate.complete();
+      await _settle(tester);
+      expect(saved.single.gesture, 'J');
+      expect(camera.videoStarts, 2);
+      await closeScreen(tester);
+    },
+  );
+
+  testWidgets('immediate resume opens the camera after pending release', (
+    tester,
+  ) async {
+    await tester.pumpWidget(screen());
+    await _settle(tester);
+    await selectTarget(tester, 'J');
+    await tester.tap(find.text('Mulai gerakan J'));
+    await _settle(tester);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _settle(tester);
+    expect(camera.nextCameraId, 2);
+    expect(camera.disposals, 1);
+    expect(motion.cancels, 1);
+    await tester.tap(find.text('Mulai gerakan J'));
+    await _settle(tester);
+    await tester.tap(find.text('Selesai gerakan'));
+    await _settle(tester);
+    expect(saved.single.gesture, 'J');
+    await closeScreen(tester);
+  });
+
+  testWidgets(
+    'a failed interrupted-session save is retried without losing the letters',
+    (tester) async {
+      var saveFails = true;
+      await tester.pumpWidget(
+        screen(
+          onSave: (item) async {
+            if (saveFails) throw StateError('database unavailable');
+            saved.add(item);
+          },
+        ),
+      );
+      await _settle(tester);
+      await tester.tap(find.text('Mulai latihan bebas'));
+      await _settle(tester);
+      await tester.tap(find.text('Mulai J/Z'));
+      await _settle(tester);
+      await tester.tap(find.text('Selesai gerakan'));
+      await _settle(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await _settle(tester);
+      expect(saved, isEmpty);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _settle(tester);
+      saveFails = false;
+      await tester.tap(find.text('Mulai latihan bebas'));
+      await _settle(tester);
+      expect(saved.single.gesture, 'J');
+      await closeScreen(tester);
+    },
+  );
+
+  testWidgets(
     'a static decision already in flight cannot leak into a J/Z clip',
     (tester) async {
       await tester.pumpWidget(screen());
@@ -661,6 +861,57 @@ void main() {
     expect(saved, isEmpty);
     expect(find.text('Mulai gerakan Z'), findsOneWidget);
     expect(find.textContaining('Gerakan terlalu lama'), findsOneWidget);
+    await closeScreen(tester);
+  });
+
+  testWidgets('a stalled start releases controls after the bounded wait', (
+    tester,
+  ) async {
+    motion.startGate = Completer<void>();
+    await tester.pumpWidget(screen());
+    await _settle(tester);
+    await selectTarget(tester, 'J');
+    await tester.tap(find.text('Mulai gerakan J'));
+    await tester.pump(const Duration(seconds: 13));
+    await _settle(tester);
+    expect(busy, isFalse);
+    expect(find.text('Mulai gerakan J'), findsOneWidget);
+    // A start that eventually completes must not open a late camera stream.
+    motion.startGate!.complete();
+    await _settle(tester);
+    expect(camera.streamStarts, 0);
+    motion.startGate = null;
+    await tester.tap(find.text('Mulai gerakan J'));
+    await _settle(tester);
+    await tester.tap(find.text('Selesai gerakan'));
+    await _settle(tester);
+    expect(saved.single.gesture, 'J');
+    await closeScreen(tester);
+  });
+
+  testWidgets('a stalled finish releases controls after the bounded wait', (
+    tester,
+  ) async {
+    motion.finishGate = Completer<JzClipResult>();
+    await tester.pumpWidget(screen());
+    await _settle(tester);
+    await selectTarget(tester, 'Z');
+    await tester.tap(find.text('Mulai gerakan Z'));
+    await _settle(tester);
+    await tester.tap(find.text('Selesai gerakan'));
+    await tester.pump(const Duration(seconds: 13));
+    await _settle(tester);
+    expect(busy, isFalse);
+    expect(find.text('Mulai gerakan Z'), findsOneWidget);
+    motion.finishGate!.complete(motion.result);
+    await _settle(tester);
+    expect(saved, isEmpty);
+    motion.finishGate = null;
+    await tester.tap(find.text('Mulai gerakan Z'));
+    await _settle(tester);
+    await tester.tap(find.text('Selesai gerakan'));
+    await _settle(tester);
+    expect(saved.single.gesture, 'J');
     await closeScreen(tester);
   });
 
@@ -778,4 +1029,37 @@ void main() {
       tester.view.resetDevicePixelRatio();
     },
   );
+
+  testWidgets('camera controls fit a short screen including app navigation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = FakeViewPadding(top: 24, bottom: 24);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    await tester.pumpWidget(screen(chrome: true));
+    await _settle(tester);
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Mulai latihan bebas'));
+    await tester.tap(find.text('Mulai latihan bebas'));
+    await _settle(tester);
+    expect(camera.videoStarts, 1);
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Mulai J/Z'));
+    await tester.tap(find.text('Mulai J/Z'));
+    await _settle(tester);
+    expect(motion.starts, 1);
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.text('Selesai gerakan'));
+    await tester.tap(find.text('Selesai gerakan'));
+    await _settle(tester);
+    await tester.ensureVisible(find.text('Akhiri dan lihat hasil'));
+    await tester.tap(find.text('Akhiri dan lihat hasil'));
+    await _settle(tester);
+    expect(saved.single.gesture, 'J');
+    expect(tester.takeException(), isNull);
+    await closeScreen(tester);
+  });
 }

@@ -51,11 +51,13 @@ class _CameraScreenState extends State<CameraScreen>
   static const _stableFramesRequired = 2;
   static const _handPresenceWindow = Duration(milliseconds: 800);
   static const _handDetectionTimeout = Duration(seconds: 2);
+  static const _jzOperationTimeout = Duration(seconds: 10);
+  static const _jzCancellationTimeout = Duration(seconds: 2);
   static final _supportedLabels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
   CameraController? _controller;
   StaticCameraPipeline? _staticPipeline;
-  StreamSubscription<List<Hand>>? _handSubscription;
+  StreamSubscription<StaticHandObservation>? _handSubscription;
   List<CameraDescription> _cameras = const [];
   int _cameraIndex = 0;
   bool _isInitializing = true;
@@ -111,6 +113,8 @@ class _CameraScreenState extends State<CameraScreen>
   int? _lastJzTimestamp;
   Future<void>? _jzCancellation;
   Future<void>? _jzFinishOperation;
+  Future<void>? _interruptedSessionSave;
+  HistoryItem? _pendingInterruptedHistory;
   Timer? _jzLimitTimer;
   // Native camera resources belong to the app, even when navigation destroys
   // this State. A new screen must wait for the old controller's disposal.
@@ -153,13 +157,13 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
     _photoGeneration++;
+    unawaited(_disposeCamera());
     _photoPath = null;
     _photoPrediction = null;
     _photoHistorySaved = false;
     _savedVideoPath = null;
     _selectedTarget = '';
     _resetRecognitionState(clearFreeResults: true, clearTargetResults: true);
-    unawaited(_disposeCamera());
     if (widget.cameraEnabled && _appIsActive) {
       unawaited(_initializeCameras());
     } else {
@@ -276,8 +280,9 @@ class _CameraScreenState extends State<CameraScreen>
       pipeline.dispose();
       return false;
     }
-    _handSubscription = pipeline.hands.listen(
-      _acceptHandLandmarks,
+    _handSubscription = pipeline.generationObservations.listen(
+      (observation) =>
+          _acceptHandLandmarks(observation.hands, observation.generation),
       onError: (Object error) {
         _isHandDetectionPending = false;
         if (mounted) _showMessage('Hand detector gagal: $error');
@@ -286,7 +291,11 @@ class _CameraScreenState extends State<CameraScreen>
     return true;
   }
 
-  void _acceptHandLandmarks(List<Hand> hands) {
+  void _acceptHandLandmarks(List<Hand> hands, int generation) {
+    // A detector result can arrive after a J/Z clip has invalidated the
+    // static-analysis generation. It must not release the hand guard or feed
+    // the CNN in the new generation.
+    if (generation != _analysisGeneration) return;
     _isHandDetectionPending = false;
     if (!mounted || !_isAnalysisActive) return;
     if (_isJzBusy || _isJzTarget) return;
@@ -368,6 +377,14 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isStartingSession = true);
     widget.onBusyChanged?.call(true);
     try {
+      final pendingInterruptedSave = _interruptedSessionSave;
+      if (pendingInterruptedSave != null) {
+        await pendingInterruptedSave;
+      }
+      if (!mounted || !_appIsActive) return;
+      // A failed database write must be retried before a new session clears
+      // the accepted letters from the interrupted one.
+      await _saveInterruptedSession();
       if (!await _initializeStaticPipeline()) return;
       if (!_isCurrentCameraRequest(cameraGeneration) ||
           !identical(controller, _controller)) {
@@ -541,7 +558,7 @@ class _CameraScreenState extends State<CameraScreen>
     });
     widget.onBusyChanged?.call(true);
     try {
-      await _jz.startClip();
+      await _jz.startClip().timeout(_jzOperationTimeout);
       if (!_isCurrentCameraRequest(cameraGeneration) ||
           generation != _jzGeneration ||
           !identical(controller, _controller)) {
@@ -628,7 +645,7 @@ class _CameraScreenState extends State<CameraScreen>
       _jzFeedback = 'Sedang membaca gerakan...';
     });
     try {
-      final result = await _jz.finishClip();
+      final result = await _jz.finishClip().timeout(_jzOperationTimeout);
       if (!mounted || generation != _jzGeneration) return;
       final letter = result.letter;
       setState(() {
@@ -676,8 +693,17 @@ class _CameraScreenState extends State<CameraScreen>
       }
     } catch (error) {
       if (mounted && generation == _jzGeneration) {
-        setState(() => _jzFeedback = 'Gerakan gagal diproses. Silakan ulangi.');
-        _showMessage('Pembacaan gerakan gagal: $error');
+        if (error is TimeoutException) {
+          await _abortJz(
+            'Pembacaan gerakan terlalu lama. Silakan ulangi.',
+            waitForFinish: false,
+          );
+        } else {
+          setState(
+            () => _jzFeedback = 'Gerakan gagal diproses. Silakan ulangi.',
+          );
+          _showMessage('Pembacaan gerakan gagal: $error');
+        }
       }
     } finally {
       if (generation == _jzGeneration) {
@@ -709,14 +735,14 @@ class _CameraScreenState extends State<CameraScreen>
     _awaitingStaticRelease = inFreeSession;
   }
 
-  Future<void> _abortJz(String message) async {
+  Future<void> _abortJz(String message, {bool waitForFinish = true}) async {
     final generation = _jzGeneration;
-    await _cancelJz();
+    await _cancelJz(waitForFinish: waitForFinish);
     if (!mounted || _jzGeneration != generation + 1) return;
     setState(() => _jzFeedback = message);
   }
 
-  Future<void> _cancelJz() {
+  Future<void> _cancelJz({bool waitForFinish = true}) {
     if (_jzCancellation case final pending?) return pending;
     if (!_isJzBusy) return Future<void>.value();
     _jzGeneration++;
@@ -731,14 +757,17 @@ class _CameraScreenState extends State<CameraScreen>
     operation =
         () async {
           try {
-            await _jz.cancelClip();
+            await _jz.cancelClip().timeout(_jzCancellationTimeout);
             // Let an interrupted frontend completion unwind before accepting
             // the next clip. Its result has already been invalidated above.
-            await _jzFinishOperation;
-            if (!inFreeSession) await _stopTargetImageStream();
+            final pendingFinish = _jzFinishOperation;
+            if (waitForFinish && pendingFinish != null) {
+              await pendingFinish.timeout(_jzCancellationTimeout);
+            }
           } catch (error) {
             _showMessage('Pembacaan gerakan gagal dibatalkan: $error');
           } finally {
+            if (!inFreeSession) await _stopTargetImageStream();
             _isJzCancelling = false;
             if (!inFreeSession) _isTargetAnalysisActive = false;
             _resetAfterMotion(inFreeSession);
@@ -814,7 +843,11 @@ class _CameraScreenState extends State<CameraScreen>
       _lastHandDetectionAt = now;
       _isHandDetectionPending = true;
       try {
-        _staticPipeline?.detectHands(cameraImage, rotation);
+        _staticPipeline?.detectHandsForGeneration(
+          cameraImage,
+          rotation,
+          _analysisGeneration,
+        );
       } catch (error) {
         _isHandDetectionPending = false;
         if (mounted) {
@@ -1381,16 +1414,52 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _disposeCamera() async {
+    final pendingDisposal = _interruptedSessionSave;
+    if (pendingDisposal != null) return pendingDisposal;
     _cameraGeneration++;
+    final interruptedLetters = List<String>.of(_sessionLetters);
+    final interruptedConfidences = List<double>.of(_sessionConfidences);
+    final shouldSaveInterruptedSession =
+        _isSessionActive && interruptedLetters.isNotEmpty;
+    if (shouldSaveInterruptedSession) {
+      _pendingInterruptedHistory = HistoryItem.fromDetection(
+        gesture: interruptedLetters.join(),
+        confidence: interruptedConfidences.isEmpty
+            ? 0.0
+            : interruptedConfidences.reduce((a, b) => a + b) /
+                  interruptedConfidences.length,
+        source: 'video',
+      );
+    }
     final motionCancellation = _cancelJz();
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
     _analysisGeneration++;
-    try {
+    // Enqueue release immediately, before a rapid resume can enqueue an open.
+    final cameraRelease = _queueCameraLifecycle(() async {
       await motionCancellation;
-      await _queueCameraLifecycle(_releaseCamera);
+      await _releaseCamera();
+    });
+    late final Future<void> operation;
+    operation =
+        () async {
+          await cameraRelease;
+          if (shouldSaveInterruptedSession) {
+            _pendingInterruptedHistory = _pendingInterruptedHistory?.copyWith(
+              videoPath: _savedVideoPath,
+            );
+            await _saveInterruptedSession();
+          }
+        }().whenComplete(() {
+          if (identical(_interruptedSessionSave, operation)) {
+            _interruptedSessionSave = null;
+          }
+        });
+    _interruptedSessionSave = operation;
+    try {
+      await operation;
     } catch (error) {
-      if (mounted) _showMessage('Kamera gagal ditutup: $error');
+      if (mounted) _showMessage('Penutupan sesi belum selesai: $error');
     }
     if (mounted &&
         !_isStartingSession &&
@@ -1406,6 +1475,7 @@ class _CameraScreenState extends State<CameraScreen>
     await _cancelJz();
     final controller = _controller;
     _controller = null;
+    if (mounted) setState(() {});
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
     _isTargetAnalysisStarting = false;
@@ -1427,6 +1497,15 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) _showMessage('Kamera dihentikan: $error');
     } finally {
       await controller.dispose();
+    }
+  }
+
+  Future<void> _saveInterruptedSession() async {
+    final history = _pendingInterruptedHistory;
+    if (history == null) return;
+    await widget.onResultSaved?.call(history);
+    if (identical(history, _pendingInterruptedHistory)) {
+      _pendingInterruptedHistory = null;
     }
   }
 
@@ -1507,9 +1586,9 @@ class _CameraScreenState extends State<CameraScreen>
               16,
               MediaQuery.paddingOf(context).top + 12 + widget.topOverlayHeight,
               16,
-              102,
+              MediaQuery.sizeOf(context).height < 700 ? 88 : 102,
             ),
-            child: Column(
+            child: _ScrollableCameraControls(
               children: [
                 _CameraHeader(
                   title: 'Kamera Latihan',
@@ -1687,7 +1766,7 @@ class _CameraScreenState extends State<CameraScreen>
               16,
               MediaQuery.paddingOf(context).top + 12 + widget.topOverlayHeight,
               16,
-              102,
+              MediaQuery.sizeOf(context).height < 700 ? 88 : 102,
             ),
             child: Column(
               children: [
@@ -2011,6 +2090,24 @@ class _CameraScreenState extends State<CameraScreen>
     }
     return FullBleedCameraPreview(controller: controller);
   }
+}
+
+/// Keeps the overlay bottom-aligned while allowing access to every control
+/// when navigation, system insets, or larger text leave too little height.
+class _ScrollableCameraControls extends StatelessWidget {
+  const _ScrollableCameraControls({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: IntrinsicHeight(child: Column(children: children)),
+      ),
+    ),
+  );
 }
 
 class _CameraHeader extends StatelessWidget {
