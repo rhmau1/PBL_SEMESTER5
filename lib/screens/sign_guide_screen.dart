@@ -126,7 +126,7 @@ class _MotionNotice extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Huruf J dan Z memakai gerakan, sehingga belum dinilai oleh model gambar statis.',
+                    'J dan Z dikenali melalui gerakan di menu Video. Foto dan Upload mengenali 24 huruf statis.',
                     style: TextStyle(
                       color: Color(0xFF9A4D12),
                       fontSize: 12,
@@ -397,7 +397,7 @@ class _LetterCard extends StatelessWidget {
                       if (item.requiresMotion) ...[
                         const SizedBox(height: 12),
                         const Text(
-                          'Model saat ini tidak mengenali huruf ini.',
+                          'Coba melalui Video. Pilih target huruf ini, tekan Mulai gerakan, lalu Selesai gerakan setelah gerakan lengkap.',
                           style: TextStyle(
                             color: Color(0xFF9A4D12),
                             fontWeight: FontWeight.w700,

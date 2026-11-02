@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'guide_page.dart';
 import 'learning_progress_page.dart';
+
 class HomePage extends StatelessWidget {
   const HomePage({
     super.key,
@@ -123,9 +124,8 @@ class HomePage extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => LearningProgressPage(
-          onContinueLearning: () => onNavigate(1),
-        ),
+        builder: (_) =>
+            LearningProgressPage(onContinueLearning: () => onNavigate(1)),
       ),
     );
   }
@@ -136,19 +136,14 @@ class HomePage extends StatelessWidget {
     } else {
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => GuidePage(onNavigate: onNavigate),
-        ),
+        MaterialPageRoute(builder: (_) => GuidePage(onNavigate: onNavigate)),
       );
     }
   }
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({
-    required this.onOpenGuide,
-    required this.onOpenProgress,
-  });
+  const _HomeHeader({required this.onOpenGuide, required this.onOpenProgress});
 
   final VoidCallback onOpenGuide;
   final VoidCallback onOpenProgress;
@@ -550,11 +545,7 @@ class _GuideAction extends StatelessWidget {
                   color: HomePage._paleBlue,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(
-                  Icons.auto_stories_rounded,
-                  color: blue,
-                  size: 24,
-                ),
+                child: Icon(Icons.auto_stories_rounded, color: blue, size: 24),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -571,7 +562,7 @@ class _GuideAction extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Fitur deteksi, 24 huruf, dan tips akurasi',
+                      '24 huruf statis, gerakan J/Z, dan tips akurasi',
                       style: TextStyle(
                         color: muted,
                         fontSize: 12,
@@ -623,11 +614,7 @@ class _GamificationAction extends StatelessWidget {
                   color: HomePage._paleBlue,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(
-                  Icons.military_tech_rounded,
-                  color: blue,
-                  size: 26,
-                ),
+                child: Icon(Icons.military_tech_rounded, color: blue, size: 26),
               ),
               const SizedBox(width: 14),
               Expanded(

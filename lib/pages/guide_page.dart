@@ -84,23 +84,19 @@ class GuidePage extends StatelessWidget {
               iconColor: _blue,
               iconBgColor: _paleBlue,
               title: 'Deteksi dengan Video (Kamera Real-Time)',
-              description:
-                  'Gunakan kamera secara langsung untuk melatih pose tangan dengan evaluasi instan berbasis kecerdasan buatan (AI).',
+              description: 'Gunakan kamera secara langsung untuk melatih pose tangan dengan evaluasi instan berbasis kecerdasan buatan (AI).',
               subItems: const [
                 _SubItemData(
                   title: 'Mode Latihan Bebas',
-                  description:
-                      'Peragakan gerakan huruf secara bebas tanpa batas waktu. Sistem akan mengenali dan merangkai huruf demi huruf yang berhasil diperagakan secara berkelanjutan.',
+                  description: 'Tekan Mulai latihan bebas untuk merangkai huruf. Sebelum memperagakan J/Z, tekan Mulai J/Z, lakukan satu gerakan lengkap, lalu Selesai gerakan. Turunkan tangan sebelum melanjutkan huruf berikutnya. Hasil tampil saat sesi diakhiri.',
                 ),
                 _SubItemData(
                   title: 'Mode Uji per Huruf',
-                  description:
-                      'Pilih satu huruf target yang ingin diuji melalui menu dropdown (misal: Huruf A). Sistem memvalidasi apakah bentuk tangan Anda sudah sesuai dengan target tersebut.',
+                  description: 'Pilih huruf target melalui dropdown. Untuk 24 huruf statis, deteksi berjalan otomatis. Untuk J/Z, tekan Mulai gerakan, peragakan lengkap, lalu Selesai gerakan. Hasil dibandingkan dengan target tanpa mengganti huruf yang dikenali.',
                 ),
                 _SubItemData(
-                  title: '24 Abjad Didukung (Tanpa J & Z)',
-                  description:
-                      'Deteksi saat ini mencakup 24 huruf alfabet statis (A–Y, kecuali J dan Z). Huruf J dan Z belum didukung karena membutuhkan deteksi gerakan tangan dinamis (motion gestures), sementara model saat ini difokuskan pada pose statis.',
+                  title: '26 Huruf ASL: Pose dan Gerakan',
+                  description: 'CNN mengenali 24 huruf dari pose tangan. Model gerakan terpisah mengenali J dan Z melalui beberapa frame video. Gerakan yang tidak jelas atau tidak dikenali perlu diulang dan tidak menambah huruf.',
                   isHighlight: true,
                 ),
               ],
@@ -113,8 +109,7 @@ class GuidePage extends StatelessWidget {
               iconColor: Color(0xFF00A879),
               iconBgColor: Color(0xFFE8F8F3),
               title: 'Deteksi dari Foto (Mode Foto)',
-              description:
-                  'Ambil foto pose tangan Anda secara instan menggunakan tombol rana kamera. Foto akan dianalisis secara presisi dan menampilkan huruf yang terdeteksi beserta persentase keyakinan model.',
+              description: 'Ambil foto untuk mengenali satu dari 24 huruf statis beserta keyakinan model. J dan Z membutuhkan gerakan, sehingga gunakan menu Video.',
             ),
             const SizedBox(height: 14),
 
@@ -124,8 +119,7 @@ class GuidePage extends StatelessWidget {
               iconColor: Color(0xFF8E44AD),
               iconBgColor: Color(0xFFF4ECF7),
               title: 'Deteksi dari Upload Gambar',
-              description:
-                  'Unggah foto tangan dari galeri perangkat Anda. Mendukung upload satu gambar maupun banyak gambar sekaligus (batch) untuk evaluasi cepat.',
+              description: 'Unggah satu atau banyak foto tangan untuk 24 huruf statis. Setiap foto dinilai sendiri. Kumpulan foto bukan rekaman gerakan J/Z.',
             ),
             const SizedBox(height: 14),
 
@@ -135,8 +129,7 @@ class GuidePage extends StatelessWidget {
               iconColor: Color(0xFFE67E22),
               iconBgColor: Color(0xFFFDF2E9),
               title: 'Riwayat Deteksi Otomatis',
-              description:
-                  'Setiap kali Anda selesai melakukan deteksi (baik melalui video, foto, maupun upload), hasilnya akan otomatis tersimpan ke halaman Riwayat Deteksi. Anda dapat membuka kembali rekaman latihan, melihat tanggal, sumber deteksi, dan skor keyakinan kapan saja.',
+              description: 'Hasil latihan bebas, foto, upload, serta gerakan J/Z yang diterima disimpan ke Riwayat Deteksi. Gerakan ditolak tidak disimpan. Uji target huruf statis tetap menampilkan hasil langsung tanpa menyimpan setiap frame.',
             ),
             const SizedBox(height: 14),
 
@@ -146,8 +139,7 @@ class GuidePage extends StatelessWidget {
               iconColor: _blue,
               iconBgColor: _paleBlue,
               title: 'Kamus Isyarat Lengkap (A–Z)',
-              description:
-                  'Menampilkan contoh visual bentuk dan posisi jari tangan untuk seluruh huruf dari A sampai Z. Dilengkapi petunjuk deskriptif cara membentuk setiap huruf sebagai referensi belajar Anda.',
+              description: 'Menampilkan contoh visual bentuk dan posisi jari tangan untuk seluruh huruf dari A sampai Z. Dilengkapi petunjuk deskriptif cara membentuk setiap huruf sebagai referensi belajar Anda.',
             ),
             const SizedBox(height: 14),
 
@@ -157,33 +149,27 @@ class GuidePage extends StatelessWidget {
               iconColor: const Color(0xFFE67E22),
               iconBgColor: const Color(0xFFFFF7E6),
               title: 'Sistem Gamifikasi & Koleksi Badges',
-              description:
-                  'Aplikasi mencatat secara lokal berapa kali Anda mencoba dan huruf apa saja yang telah dipelajari. Dapatkan badges prestasi sesuai tingkat penguasaan Anda:',
+              description: 'Aplikasi mencatat secara lokal berapa kali Anda mencoba dan huruf apa saja yang telah dipelajari. Dapatkan badges prestasi sesuai tingkat penguasaan Anda:',
               subItems: const [
                 _SubItemData(
                   title: 'Keep learning',
-                  description:
-                      'Didapat setelah menyelesaikan sesi latihan/deteksi pertama kali.',
+                  description: 'Didapat setelah menyelesaikan sesi latihan/deteksi pertama kali.',
                 ),
                 _SubItemData(
                   title: 'Good',
-                  description:
-                      'Didapat saat sudah mencoba dan mempelajari minimal 5 huruf berbeda.',
+                  description: 'Didapat saat sudah mencoba dan mempelajari minimal 5 huruf berbeda.',
                 ),
                 _SubItemData(
                   title: 'Excellent',
-                  description:
-                      'Didapat saat sudah mencoba dan mempelajari minimal 15 huruf alfabet.',
+                  description: 'Didapat saat sudah mencoba dan mempelajari minimal 15 huruf alfabet.',
                 ),
                 _SubItemData(
                   title: 'Perfect',
-                  description:
-                      'Didapat saat sudah melatih seluruh 24 huruf alfabet yang didukung.',
+                  description: 'Didapat setelah melatih sedikitnya 24 huruf berbeda. Syarat lama tetap berlaku, sedangkan progres alfabet lengkap memiliki target 26 huruf.',
                 ),
                 _SubItemData(
                   title: 'Impossible (Tingkat Tertinggi)',
-                  description:
-                      'Didapat jika berhasil menguasai seluruh huruf sekaligus mencapai 7-day streak latihan berturut-turut.',
+                  description: 'Didapat setelah melatih sedikitnya 24 huruf berbeda dan mencapai 7 hari latihan berturut-turut.',
                   isHighlight: true,
                 ),
               ],
@@ -204,24 +190,21 @@ class GuidePage extends StatelessWidget {
             const _TipCard(
               icon: Icons.wb_sunny_rounded,
               title: 'Pencahayaan yang Terang & Cukup',
-              description:
-                  'Gunakan aplikasi di ruangan dengan penerangan yang baik dan merata. Hindari kondisi remang-remang atau backlight (sumber cahaya kuat berada tepat di belakang Anda).',
+              description: 'Gunakan aplikasi di ruangan dengan penerangan yang baik dan merata. Hindari kondisi remang-remang atau backlight (sumber cahaya kuat berada tepat di belakang Anda).',
             ),
             const SizedBox(height: 10),
 
             const _TipCard(
               icon: Icons.front_hand_rounded,
               title: 'Area Tangan Terlihat Jelas & Tidak Terpotong',
-              description:
-                  'Posisikan seluruh telapak tangan dan kelima jari berada utuh di dalam bingkai layar kamera. Jangan sampai bagian jari terpotong tepi layar atau tertutup lengan baju dan aksesoris.',
+              description: 'Posisikan seluruh telapak tangan dan kelima jari berada utuh di dalam bingkai layar kamera. Jangan sampai bagian jari terpotong tepi layar atau tertutup lengan baju dan aksesoris.',
             ),
             const SizedBox(height: 10),
 
             const _TipCard(
               icon: Icons.wallpaper_rounded,
               title: 'Latar Belakang Sederhana & Tidak Ramai',
-              description:
-                  'Pilih latar belakang yang polos atau minim distraksi. Hindari background ramai seperti orang berlalu-lalang atau pola dinding yang rumit agar titik-titik tangan (hand landmarks) terdeteksi optimal.',
+              description: 'Pilih latar belakang yang polos atau minim distraksi. Hindari background ramai seperti orang berlalu-lalang atau pola dinding yang rumit agar titik-titik tangan (hand landmarks) terdeteksi optimal.',
             ),
 
             if (onNavigate != null) ...[
@@ -301,11 +284,7 @@ class _GuideHeroBanner extends StatelessWidget {
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.auto_stories_rounded,
-                  color: Colors.white,
-                  size: 14,
-                ),
+                Icon(Icons.auto_stories_rounded, color: Colors.white, size: 14),
                 SizedBox(width: 6),
                 Text(
                   'TENTANG APLIKASI',
@@ -635,11 +614,7 @@ class _DisclaimerCard extends StatelessWidget {
       children: [
         const Padding(
           padding: EdgeInsets.only(top: 4),
-          child: Icon(
-            Icons.circle,
-            size: 6,
-            color: GuidePage._amberText,
-          ),
+          child: Icon(Icons.circle, size: 6, color: GuidePage._amberText),
         ),
         const SizedBox(width: 10),
         Expanded(

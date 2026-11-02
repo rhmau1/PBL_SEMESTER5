@@ -608,7 +608,7 @@ class _EmptyUploadState extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 const Text(
-                  'Pilih foto tangan dari galeri untuk mulai mendeteksi.',
+                  'Pilih foto untuk 24 huruf statis. J dan Z memerlukan gerakan melalui menu Video.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Color(0xFF7585A2),

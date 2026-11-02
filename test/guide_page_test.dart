@@ -9,10 +9,7 @@ void main() {
   Widget createHost(Widget child) {
     return MaterialApp(
       home: child,
-      theme: ThemeData(
-        fontFamily: 'Roboto',
-        useMaterial3: true,
-      ),
+      theme: ThemeData(fontFamily: 'Roboto', useMaterial3: true),
     );
   }
 
@@ -26,108 +23,89 @@ void main() {
   }
 
   group('GuidePage Content and Completeness', () {
-    testWidgets('renders all required guide sections, features, and disclaimer', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        createHost(
-          const GuidePage(),
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'renders all required guide sections, features, and disclaimer',
+      (tester) async {
+        await tester.pumpWidget(createHost(const GuidePage()));
+        await tester.pumpAndSettle();
 
-      // Title & Header
-      expect(find.text('Panduan Penggunaan'), findsOneWidget);
-      expect(
-        find.textContaining('Belajar Bahasa Isyarat'),
-        findsWidgets,
-      );
+        // Title & Header
+        expect(find.text('Panduan Penggunaan'), findsOneWidget);
+        expect(find.textContaining('Belajar Bahasa Isyarat'), findsWidgets);
 
-      // Section: Fitur-fitur utama
-      expect(find.text('Fitur-Fitur Utama'), findsOneWidget);
+        // Section: Fitur-fitur utama
+        expect(find.text('Fitur-Fitur Utama'), findsOneWidget);
 
-      // Fitur 1: Deteksi Video
-      expect(
-        find.textContaining('Deteksi dengan Video'),
-        findsOneWidget,
-      );
-      expect(find.text('Mode Latihan Bebas'), findsOneWidget);
-      expect(find.text('Mode Uji per Huruf'), findsOneWidget);
-      expect(
-        find.textContaining('24 Abjad Didukung (Tanpa J & Z)'),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('belum didukung karena membutuhkan deteksi gerakan tangan dinamis'),
-        findsOneWidget,
-      );
+        // Fitur 1: Deteksi Video
+        expect(find.textContaining('Deteksi dengan Video'), findsOneWidget);
+        expect(find.text('Mode Latihan Bebas'), findsOneWidget);
+        expect(find.text('Mode Uji per Huruf'), findsOneWidget);
+        expect(
+          find.textContaining('26 Huruf ASL: Pose dan Gerakan'),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('Model gerakan terpisah mengenali J dan Z'),
+          findsOneWidget,
+        );
 
-      // Fitur 2: Deteksi Foto
-      await expectVisible(
-        tester,
-        find.textContaining('Deteksi dari Foto (Mode Foto)'),
-      );
+        // Fitur 2: Deteksi Foto
+        await expectVisible(
+          tester,
+          find.textContaining('Deteksi dari Foto (Mode Foto)'),
+        );
 
-      // Fitur 3: Upload Gambar
-      await expectVisible(
-        tester,
-        find.textContaining('Deteksi dari Upload Gambar'),
-      );
+        // Fitur 3: Upload Gambar
+        await expectVisible(
+          tester,
+          find.textContaining('Deteksi dari Upload Gambar'),
+        );
 
-      // Fitur 4: Riwayat Deteksi Otomatis
-      await expectVisible(
-        tester,
-        find.textContaining('Riwayat Deteksi Otomatis'),
-      );
-      expect(
-        find.textContaining('otomatis tersimpan ke halaman Riwayat Deteksi'),
-        findsOneWidget,
-      );
+        // Fitur 4: Riwayat Deteksi Otomatis
+        await expectVisible(
+          tester,
+          find.textContaining('Riwayat Deteksi Otomatis'),
+        );
+        expect(
+          find.textContaining(
+            'gerakan J/Z yang diterima disimpan ke Riwayat Deteksi',
+          ),
+          findsOneWidget,
+        );
 
-      // Fitur 5: Kamus Isyarat
-      await expectVisible(
-        tester,
-        find.textContaining('Kamus Isyarat Lengkap (A–Z)'),
-      );
+        // Fitur 5: Kamus Isyarat
+        await expectVisible(
+          tester,
+          find.textContaining('Kamus Isyarat Lengkap (A–Z)'),
+        );
 
-      // Disclaimer & Akurasi
-      await expectVisible(
-        tester,
-        find.text('PENTING: DISCLAIMER AKURASI'),
-      );
-      expect(
-        find.text('Model Bisa Saja Salah Mendeteksi'),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('belum tentu 100% benar'),
-        findsOneWidget,
-      );
-      expect(
-        find.textContaining('cek manual di halaman Kamus Isyarat'),
-        findsOneWidget,
-      );
+        // Disclaimer & Akurasi
+        await expectVisible(tester, find.text('PENTING: DISCLAIMER AKURASI'));
+        expect(find.text('Model Bisa Saja Salah Mendeteksi'), findsOneWidget);
+        expect(find.textContaining('belum tentu 100% benar'), findsOneWidget);
+        expect(
+          find.textContaining('cek manual di halaman Kamus Isyarat'),
+          findsOneWidget,
+        );
 
-      // Rekomendasi / Tips
-      await expectVisible(
-        tester,
-        find.text('Tips & Rekomendasi Penggunaan'),
-      );
-      await expectVisible(
-        tester,
-        find.textContaining('Pencahayaan yang Terang & Cukup'),
-      );
-      await expectVisible(
-        tester,
-        find.textContaining('Area Tangan Terlihat Jelas & Tidak Terpotong'),
-      );
-      await expectVisible(
-        tester,
-        find.textContaining('Latar Belakang Sederhana & Tidak Ramai'),
-      );
+        // Rekomendasi / Tips
+        await expectVisible(tester, find.text('Tips & Rekomendasi Penggunaan'));
+        await expectVisible(
+          tester,
+          find.textContaining('Pencahayaan yang Terang & Cukup'),
+        );
+        await expectVisible(
+          tester,
+          find.textContaining('Area Tangan Terlihat Jelas & Tidak Terpotong'),
+        );
+        await expectVisible(
+          tester,
+          find.textContaining('Latar Belakang Sederhana & Tidak Ramai'),
+        );
 
-      expect(tester.takeException(), isNull);
-    });
+        expect(tester.takeException(), isNull);
+      },
+    );
 
     testWidgets('quick action buttons trigger navigation and pop page', (
       tester,
@@ -179,11 +157,7 @@ void main() {
         tester.view.devicePixelRatio = 1.0;
         addTearDown(tester.view.reset);
 
-        await tester.pumpWidget(
-          createHost(
-            GuidePage(onNavigate: (_) {}),
-          ),
-        );
+        await tester.pumpWidget(createHost(GuidePage(onNavigate: (_) {})));
         await tester.pumpAndSettle();
 
         expect(find.byType(GuidePage), findsOneWidget);
@@ -245,9 +219,7 @@ void main() {
     });
 
     testWidgets('DictionaryPage help icon opens GuidePage', (tester) async {
-      await tester.pumpWidget(
-        createHost(const DictionaryPage()),
-      );
+      await tester.pumpWidget(createHost(const DictionaryPage()));
       await tester.pumpAndSettle();
 
       final helpBtn = find.byTooltip('Panduan Penggunaan');
