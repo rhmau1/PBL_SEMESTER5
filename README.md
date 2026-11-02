@@ -1,10 +1,10 @@
 # LatihIsyarat Flutter
 
 Project hasil penggabungan aplikasi PBL Semester 5 dengan sistem deteksi
-`PBL-BAHASA-ISYARAT`. Fokus aplikasi adalah 24 huruf statis ASL, bukan
-penerjemahan seluruh bahasa isyarat atau pembentukan kalimat otomatis.
+`PBL-BAHASA-ISYARAT`. Aplikasi mengenali 24 pose huruf statis ASL serta
+gerakan J dan Z. Rangkaian huruf belum membentuk kalimat atau spasi otomatis.
 
-Project Flutter berada langsung di `~/Documents/rhma2026/PBL_SEMESTER5`;
+Project Flutter berada langsung di root repository, misalnya `D:\PBL_SEMESTER5`;
 `pubspec.yaml`, `lib`, `android`, dan `assets` tersedia di root repository.
 
 ## Menu dan fitur
@@ -12,24 +12,27 @@ Project Flutter berada langsung di `~/Documents/rhma2026/PBL_SEMESTER5`;
 | Menu | Fungsi |
 | --- | --- |
 | Home | Beranda dan pintasan menuju fitur aplikasi |
-| Deteksi — Video | Kamera penuh; latihan bebas dengan Mulai/Akhiri, atau latihan target huruf otomatis |
+| Deteksi — Video | Latihan bebas dan target A–Z. Pose statis otomatis, J/Z dengan Mulai/Selesai gerakan |
 | Deteksi — Foto | Ambil foto, deteksi, dan ambil ulang |
 | Deteksi — Upload | Tombol `Satu gambar` dan `Banyak gambar`; hasil per gambar mengikuti urutan pilihan |
 | Kamus | Foto tangan 24 huruf statis dan petunjuk; J/Z dijelaskan sebagai gerakan |
 | Riwayat | Hasil lokal beserta waktu, sumber, dan keyakinan model; detail serta hapus riwayat |
+| Progres dan Badges | Pencatatan latihan dari riwayat, target 26 huruf, dan pencapaian belajar |
 
 Kamera depan menjadi pilihan awal dan dapat diganti ke kamera belakang.
 Pada latihan bebas, huruf yang diterima ditampilkan setelah **Akhiri** pada
-bottom sheet selebar layar dengan tinggi tetap 50% layar (maksimum 85%; isi
-yang lebih panjang dapat di-scroll), sehingga ukurannya sama di setiap sesi.
+panel hasil yang dapat di-scroll.
 Satu sesi disimpan sebagai satu hasil riwayat jika terdapat huruf yang diterima.
-Mode target huruf berjalan tanpa tombol Mulai dan tidak menambah setiap frame
-ke Riwayat.
+Target huruf statis berjalan otomatis tanpa menyimpan setiap frame ke Riwayat.
+Target J/Z memakai **Mulai gerakan** lalu **Selesai gerakan**. Satu hasil J/Z
+yang diterima disimpan sekali. Dalam latihan bebas, tekan **Mulai J/Z** sebelum
+memperagakan gerakan, lalu **Selesai gerakan**. Turunkan tangan sebentar sebelum
+melanjutkan huruf berikutnya. Pemisahan gerakan masih menggunakan tombol.
 Rangkaian huruf belum memiliki spasi otomatis.
 
 ## Pengolahan input
 
-Video kamera langsung:
+Jalur 24 huruf statis:
 
 ```text
 Frame kamera → MediaPipe menemukan tangan → crop persegi mengikuti tangan
@@ -37,12 +40,20 @@ Frame kamera → MediaPipe menemukan tangan → crop persegi mengikuti tangan
 → pemeriksaan keyakinan dan kestabilan → rangkaian huruf
 ```
 
-Latihan bebas menerima frame melalui `startImageStream`; aplikasi tidak
-merekam video dan tidak menyimpan berkas rekaman. Analisis dibatasi sekitar
+Latihan bebas merekam video melalui `startVideoRecording` sambil menerima
+frame pada callback `onAvailable`. Rekaman disimpan saat sesi diakhiri.
+Target statis memakai `startImageStream` tanpa merekam. Analisis CNN dibatasi sekitar
 setiap 260 ms dan menunggu proses sebelumnya selesai; frame tidak dipilih
 acak. Deteksi tangan memiliki interval tersendiri, sehingga angka ini bukan
 jaminan waktu respons. Huruf diterima setelah prediksi stabil dan memenuhi
 batas keyakinan 60%. Model dengan keyakinan tinggi tetap dapat salah.
+
+J/Z memakai frame baru dari kamera yang sama. MediaPipe menghasilkan urutan
+landmark XYZ, kemudian GRU memberikan satu keputusan untuk satu gerakan lengkap.
+CNN tidak mencatat huruf selama gerakan tersebut. Hasil OTHER, kurang yakin,
+atau gerakan yang ditolak tidak dimasukkan ke rangkaian huruf. Capture gerakan
+dibatalkan setelah 10 detik. Alur lengkap ada di
+[panduan integrasi J/Z](docs/integrasi/FRONTEND_J_Z.md).
 
 Foto kamera dan Upload memakai MediaPipe Hand Landmarker mode IMAGE melalui
 `classifyFile`: EXIF dikoreksi, tangan dicari pada seluruh gambar,
@@ -63,23 +74,25 @@ tidak memperbarui bridge tersebut.
 
 ## Model dan data
 
-- File: `assets/models/model_float16.tflite`, 5.523.980 byte atau 5,268 MiB.
-- Model ensemble tiga seed: 42, 123, dan 2026.
+- CNN: `assets/models/model_float16.tflite`, 326.108 byte, sekitar 318,46 KiB.
 - Input `[1, 28, 28, 1]`, `float32`, grayscale bernilai 0–255.
 - Normalisasi `1/255` sudah berada di model; aplikasi tidak membagi ulang.
 - Output `[1, 24]`; urutan huruf mengikuti `assets/models/labels.json`.
-- Model mengenali A–Y tanpa J dan Z. MediaPipe mendeteksi tangan, sedangkan
-  model CNN memprediksi huruf.
+- CNN mengenali 24 huruf statis tanpa J dan Z.
+- GRU: `assets/models/jz/model_float16.tflite`, 229.672 byte, sekitar 224,29 KiB.
+  Input `[1, 48, 64]`, output J, Z, OTHER. MediaPipe mendeteksi tangan untuk
+  kedua jalur. Kedua model klasifikasi berjumlah 555.780 byte, belum termasuk
+  asset detektor tangan dan komponen aplikasi.
 
-Hasil eksperimen dalam metadata: akurasi dataset **99,3028%**, macro-F1
-**99,3325%**. Beberapa tahap eksperimen dibandingkan pada official test set,
-sehingga hasil ini bukan benchmark final yang sepenuhnya belum pernah
-digunakan untuk memilih model. Akurasi kamera harus diukur terpisah.
+Metadata CNN mencatat akurasi MNIST bersih **99,986%**. Untuk GRU, 99 dari 99
+video uji yang tangannya berhasil dideteksi dikenali benar. Jika 7 kegagalan
+deteksi ikut dihitung, hasilnya 99 dari 106 video atau **93,40%**. Angka ini
+berasal dari pengujian dataset, bukan pengukuran akurasi kamera HP.
 
-SHA-256 model:
+SHA-256 CNN:
 
 ```text
-80127bd9f692750047447500578bc8ecc3cdca466eee14037a55d53dc7ea79a9
+74f52ab0d6f091b37600ce65c4b7797a102c6e26112b6c2e4824483b168140bc
 ```
 
 Foto kamus 24 huruf berasal dari `amer_sign2.png` pada dataset
@@ -93,9 +106,11 @@ tanpa mengirim gambar ke server.
 
 ## Penyimpanan
 
-Riwayat disimpan di SQLite lokal. Foto hasil kamera dan upload berada di
-direktori internal aplikasi pada HP. Detail riwayat menampilkan foto bila
-tersedia; tidak ada pemutar video dan tidak ada rekaman yang disimpan.
+Riwayat disimpan di SQLite lokal. Foto hasil kamera, upload, dan rekaman
+latihan bebas berada di direktori internal aplikasi pada HP. Detail riwayat
+menampilkan foto jika tersedia dan lokasi berkas video. Belum ada pemutar
+video di halaman riwayat. Target J/Z
+menyimpan huruf dan keyakinan tanpa berkas video.
 Menghapus entri riwayat tidak sama dengan menghapus semua file media.
 Menghapus data aplikasi atau uninstall menghilangkan data lokal.
 
@@ -105,8 +120,8 @@ tidak dipindahkan otomatis.
 
 ## Menjalankan dan memeriksa
 
-```bash
-cd ~/Documents/rhma2026/PBL_SEMESTER5
+```powershell
+cd D:\PBL_SEMESTER5
 flutter pub get
 flutter analyze
 flutter test
@@ -117,8 +132,9 @@ flutter run
 `flutter test` hanya menjalankan berkas di `test/`. Folder `integration_test/`
 tidak dijalankan oleh perintah tersebut dan memerlukan HP Android yang
 terhubung, misalnya `flutter test integration_test -d ID_PERANGKAT`.
-Per 18 Oktober 2026, `flutter analyze` bersih dan `flutter test` menjalankan
-88 kasus dengan 88 lulus. Workflow CI di `.github/workflows/ci.yml` menjalankan
+Hasil validasi integrasi dicatat di
+[panduan integrasi J/Z](docs/integrasi/FRONTEND_J_Z.md).
+Workflow CI di `.github/workflows/ci.yml` menjalankan
 `flutter analyze` dan `flutter test` pada Ubuntu dengan Flutter 3.47.5.
 
 Panduan setup tersedia di [REQUIREMENTS.md](REQUIREMENTS.md).
@@ -143,4 +159,4 @@ rhmau1 = Fijriati Rahmatur Rizqi
 silvatria = Silva Tria Alfares
 SahrulRamadhani29 = Sahrul Ramadhani
 Ariqq16 = Mohammad Ariq Baihaqi
-CresentCrysy = Raymon Devtant 
+CresentCrysy = Raymon Devtant

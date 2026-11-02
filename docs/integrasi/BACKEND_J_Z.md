@@ -9,7 +9,7 @@ Backend berjalan di Android secara offline. Tidak ada URL server atau endpoint H
 - Konversi frame kamera, sampling maksimal 15 fps, preprocessing `48 × 64`, dan inferensi TFLite di isolate.
 - Penanganan hasil, frame tidak valid, sesi batal, dan pelepasan resource.
 
-Tampilan, navigasi, riwayat, serta pemanggilan dari halaman kamera belum diubah. Model, konfigurasi, dan alur CNN 24 huruf tetap seperti semula. Menambahkan backend ini belum membuat tombol atau halaman lama otomatis mengenali J/Z.
+Halaman kamera sudah memanggil layanan ini untuk target J/Z dan potongan gerakan dalam latihan bebas. Petunjuk penggunaan ada di [integrasi frontend](FRONTEND_J_Z.md). CNN tetap memiliki 24 output dengan konfigurasi yang sama.
 
 ## API yang dipanggil frontend
 
@@ -28,6 +28,8 @@ Import `package:sign_language/services/jz_recognition_service.dart` dan `package
 Gunakan satu layanan aktif untuk J/Z per engine Flutter. `startClip()` boleh dipanggil lagi setelah `finishClip()` atau `cancelClip()`. Setelah `dispose()`, buat instance baru.
 
 `state` menunjukkan `idle`, `starting`, `capturing`, `finishing`, atau `disposed`. `sampledFrames` adalah jumlah observasi yang sudah selesai diproses pada clip aktif.
+
+Untuk receipt berstatus `sampled`, `handDetected` melaporkan keberadaan tangan pada observasi baru tersebut. Frame yang dilewati memiliki `handDetected: null`, sehingga frontend tidak boleh menganggapnya sebagai deteksi tangan baru.
 
 ## Aturan pengiriman frame
 
@@ -158,7 +160,7 @@ Foto dan upload tetap memakai `SignClassifier.instance.classifyFile(path)` atau 
 
 Untuk latihan J/Z, frontend mengarahkan satu gerakan ke `JzRecognitionService`. Jangan mengubah hasil CNN menjadi J/Z hanya karena labelnya mirip atau confidence GRU tinggi. Backend ini tidak melakukan penggantian prediksi CNN secara otomatis.
 
-Untuk video latihan bebas berisi banyak huruf, batas setiap gerakan harus ditentukan saat integrasi. Hasil satu clip tidak boleh dianggap sebagai transkrip seluruh video. Spasi serta penyimpanan riwayat tetap mengikuti mekanisme aplikasi yang dipilih tim.
+Pada latihan bebas, tombol Mulai J/Z dan Selesai gerakan menentukan batas satu gerakan. Prediksi statis diblokir selama potongan tersebut dan baru dilanjutkan setelah tangan diturunkan. Hasil satu clip bukan transkrip seluruh video. Susunan huruf sesi tetap disimpan saat sesi diakhiri, tanpa menambah spasi otomatis.
 
 ## Channel Android untuk pemeliharaan
 

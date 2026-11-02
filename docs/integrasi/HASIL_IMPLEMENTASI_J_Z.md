@@ -1,5 +1,7 @@
 # Hasil implementasi backend J/Z
 
+Catatan tahap backend pada 1 November 2026. Integrasi halaman aplikasi berikutnya dijelaskan di [FRONTEND_J_Z.md](FRONTEND_J_Z.md). Angka pengujian pada halaman ini berlaku untuk tahap backend tersebut.
+
 Backend J/Z sudah ditambahkan sebagai layanan terpisah. Halaman aplikasi belum memanggilnya. Tampilan, navigasi, model CNN 24 huruf, crop, threshold, serta konfigurasi deteksi statis tetap utuh.
 
 ## Komponen
