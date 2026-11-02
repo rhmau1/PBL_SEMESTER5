@@ -124,6 +124,7 @@ Future<void> _sendFrames(
   JzRecognitionService service, {
   int count = 6,
   int startMs = 0,
+  bool handDetected = true,
 }) async {
   for (var index = 0; index < count; index++) {
     final timestamp = startMs + index * 67;
@@ -133,6 +134,7 @@ Future<void> _sendFrames(
     );
     expect(receipt.timestampMs, timestamp);
     expect(receipt.status, JzFrameStatus.sampled);
+    expect(receipt.handDetected, handDetected);
   }
 }
 
@@ -182,7 +184,7 @@ void main() {
     () async {
       detector.frameFor = (timestamp) => _handFrame(timestamp, visible: false);
       await service.startClip();
-      await _sendFrames(service);
+      await _sendFrames(service, handDetected: false);
       final result = await service.finishClip();
       expect(result.status, JzClipStatus.rejected);
       expect(result.rejectionCode, 'too_few_detected_samples');
@@ -288,6 +290,7 @@ void main() {
           timestampMs: timestamp,
         );
         expect(receipt.status, JzFrameStatus.skippedInterval);
+        expect(receipt.handDetected, isNull);
       }
       await _sendFrames(service, count: 5, startMs: 67);
       final result = await service.finishClip();
@@ -312,6 +315,7 @@ void main() {
           timestampMs: timestamp,
         );
         expect(receipt.status, JzFrameStatus.skippedBusy);
+        expect(receipt.handDetected, isNull);
       }
       expect(detector.timestamps, [0]);
       gate.complete();

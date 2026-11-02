@@ -10,10 +10,13 @@ import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/history_item.dart';
+import '../models/jz_clip_result.dart';
 import '../models/sign_prediction.dart';
 import '../services/camera_preview_size.dart';
 import '../services/image_preprocessor.dart';
 import '../services/sign_classifier.dart';
+import '../services/jz_recognition_service.dart';
+import '../services/static_camera_pipeline.dart';
 import '../widgets/full_bleed_camera_preview.dart';
 
 class CameraScreen extends StatefulWidget {
@@ -24,6 +27,8 @@ class CameraScreen extends StatefulWidget {
     this.onResultSaved,
     this.onBusyChanged,
     this.topOverlayHeight = 0,
+    this.jzServiceFactory,
+    this.staticPipelineFactory,
   });
 
   final bool cameraEnabled;
@@ -31,6 +36,8 @@ class CameraScreen extends StatefulWidget {
   final Future<void> Function(HistoryItem)? onResultSaved;
   final ValueChanged<bool>? onBusyChanged;
   final double topOverlayHeight;
+  final JzRecognitionService Function()? jzServiceFactory;
+  final StaticCameraPipeline Function()? staticPipelineFactory;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -44,10 +51,10 @@ class _CameraScreenState extends State<CameraScreen>
   static const _stableFramesRequired = 2;
   static const _handPresenceWindow = Duration(milliseconds: 800);
   static const _handDetectionTimeout = Duration(seconds: 2);
-  static final _supportedLabels = 'ABCDEFGHIKLMNOPQRSTUVWXY'.split('');
+  static final _supportedLabels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
   CameraController? _controller;
-  HandLandmarkerPlugin? _handLandmarker;
+  StaticCameraPipeline? _staticPipeline;
   StreamSubscription<List<Hand>>? _handSubscription;
   List<CameraDescription> _cameras = const [];
   int _cameraIndex = 0;
@@ -91,11 +98,28 @@ class _CameraScreenState extends State<CameraScreen>
   bool _appIsActive = true;
   int _cameraGeneration = 0;
   int _photoGeneration = 0;
+  late final JzRecognitionService _jz =
+      widget.jzServiceFactory?.call() ?? JzRecognitionService();
+  final Stopwatch _jzClock = Stopwatch();
+  bool _isJzStarting = false;
+  bool _isJzCapturing = false;
+  bool _isJzFinishing = false;
+  bool _isJzCancelling = false;
+  bool _awaitingStaticRelease = false;
+  String? _jzFeedback;
+  int _jzGeneration = 0;
+  int? _lastJzTimestamp;
+  Future<void>? _jzCancellation;
+  Future<void>? _jzFinishOperation;
+  Timer? _jzLimitTimer;
   // Native camera resources belong to the app, even when navigation destroys
   // this State. A new screen must wait for the old controller's disposal.
   static Future<void>? _cameraLifecycleQueue;
 
   bool get _isAnalysisActive => _isSessionActive || _isTargetAnalysisActive;
+  bool get _isJzTarget => _selectedTarget == 'J' || _selectedTarget == 'Z';
+  bool get _isJzBusy =>
+      _isJzStarting || _isJzCapturing || _isJzFinishing || _isJzCancelling;
 
   @override
   void initState() {
@@ -236,31 +260,51 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
 
-  void _initializeHandLandmarker() {
-    if (_handLandmarker != null) return;
-    _handSubscription?.cancel();
-    _handLandmarker?.dispose();
-    final landmarker = HandLandmarkerPlugin.create(
-      numHands: 1,
-      minHandDetectionConfidence: 0.35,
-      delegate: HandLandmarkerDelegate.cpu,
-    );
-    _handLandmarker = landmarker;
-    _handSubscription = landmarker.landmarkStream.listen(
+  Future<bool> _initializeStaticPipeline() async {
+    if (_staticPipeline != null) return true;
+    final pipeline =
+        widget.staticPipelineFactory?.call() ?? StaticCameraPipeline();
+    _staticPipeline = pipeline;
+    try {
+      await pipeline.initialize();
+    } catch (_) {
+      if (identical(_staticPipeline, pipeline)) _staticPipeline = null;
+      pipeline.dispose();
+      rethrow;
+    }
+    if (!mounted || !_appIsActive || !identical(pipeline, _staticPipeline)) {
+      pipeline.dispose();
+      return false;
+    }
+    _handSubscription = pipeline.hands.listen(
       _acceptHandLandmarks,
       onError: (Object error) {
         _isHandDetectionPending = false;
         if (mounted) _showMessage('Hand detector gagal: $error');
       },
     );
+    return true;
   }
 
   void _acceptHandLandmarks(List<Hand> hands) {
     _isHandDetectionPending = false;
     if (!mounted || !_isAnalysisActive) return;
+    if (_isJzBusy || _isJzTarget) return;
     final now = DateTime.now();
     final detectedHands = hands.where((hand) => hand.landmarks.isNotEmpty);
     final detected = detectedHands.isNotEmpty;
+    if (_awaitingStaticRelease) {
+      if (!detected) {
+        setState(() {
+          _awaitingStaticRelease = false;
+          _jzFeedback = null;
+        });
+      }
+      _handDetected = false;
+      _lastHandSeenAt = null;
+      _latestHandLandmarks = null;
+      return;
+    }
     if (detected) {
       _lastHandSeenAt = now;
       final landmarks = detectedHands.first.landmarks;
@@ -285,6 +329,9 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _switchCamera() async {
     if (_cameras.length < 2 ||
         _isSessionActive ||
+        _isJzStarting ||
+        _isJzFinishing ||
+        _isJzCancelling ||
         _isTargetAnalysisStarting ||
         _isInitializing ||
         _isStartingSession ||
@@ -321,12 +368,11 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isStartingSession = true);
     widget.onBusyChanged?.call(true);
     try {
-      await SignClassifier.instance.initialize();
+      if (!await _initializeStaticPipeline()) return;
       if (!_isCurrentCameraRequest(cameraGeneration) ||
           !identical(controller, _controller)) {
         return;
       }
-      _initializeHandLandmarker();
       setState(() {
         _resetRecognitionState(clearFreeResults: true);
         _savedVideoPath = null;
@@ -355,11 +401,21 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _handleTargetChanged(String target) async {
     if (widget.photoMode ||
+        _isTargetAnalysisStarting ||
+        _isJzCancelling ||
         _isSessionActive ||
         _isStartingSession ||
         _isEndingSession ||
         target == _selectedTarget) {
       return;
+    }
+
+    await _cancelJz();
+    if (!mounted || !_appIsActive) return;
+    if (_isJzTarget || target == 'J' || target == 'Z') {
+      await _stopTargetImageStream();
+      if (!mounted) return;
+      _isTargetAnalysisActive = false;
     }
 
     if (target.isEmpty) {
@@ -393,6 +449,7 @@ class _CameraScreenState extends State<CameraScreen>
     final controller = _controller;
     if (widget.photoMode ||
         _selectedTarget.isEmpty ||
+        _isJzTarget ||
         _isSessionActive ||
         _isTargetAnalysisStarting ||
         controller == null ||
@@ -411,14 +468,13 @@ class _CameraScreenState extends State<CameraScreen>
       _isTargetAnalysisStarting = true;
     }
     try {
-      await SignClassifier.instance.initialize();
+      if (!await _initializeStaticPipeline()) return;
       if (!mounted ||
           !_appIsActive ||
           !identical(controller, _controller) ||
           _selectedTarget.isEmpty) {
         return;
       }
-      _initializeHandLandmarker();
       if (resetResults && mounted) {
         setState(() => _resetRecognitionState(clearTargetResults: true));
       }
@@ -460,6 +516,247 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _resetRecognitionState(clearTargetResults: true));
   }
 
+  Future<void> _startJzGesture() async {
+    final controller = _controller;
+    if (_isJzBusy ||
+        widget.photoMode ||
+        (!_isJzTarget && !_isSessionActive) ||
+        _isStartingSession ||
+        _isEndingSession ||
+        controller == null ||
+        !controller.value.isInitialized) {
+      return;
+    }
+    final generation = ++_jzGeneration;
+    final cameraGeneration = _cameraGeneration;
+    setState(() {
+      _isJzStarting = true;
+      _jzFeedback = 'Menyiapkan pembacaan gerakan...';
+      _latestTargetPrediction = null;
+      _latestTargetConfidence = null;
+      _analysisGeneration++;
+      _candidateLabel = null;
+      _candidateCount = 0;
+      _handDetected = false;
+    });
+    widget.onBusyChanged?.call(true);
+    try {
+      await _jz.startClip();
+      if (!_isCurrentCameraRequest(cameraGeneration) ||
+          generation != _jzGeneration ||
+          !identical(controller, _controller)) {
+        return;
+      }
+      _jzClock
+        ..reset()
+        ..start();
+      _lastJzTimestamp = null;
+      setState(() {
+        _isJzCapturing = true;
+        _isTargetAnalysisActive = _isJzTarget;
+        _jzFeedback =
+            'Lakukan satu gerakan lengkap, lalu tekan Selesai gerakan.';
+      });
+      if (_isJzTarget) {
+        await _queueCameraLifecycle(() async {
+          if (!_isCurrentCameraRequest(cameraGeneration) ||
+              generation != _jzGeneration) {
+            return;
+          }
+          if (!controller.value.isStreamingImages) {
+            await controller.startImageStream(_onCameraFrame);
+            await _refreshPreviewSize(controller);
+          }
+        });
+      }
+      if (generation != _jzGeneration) return;
+      setState(() => _isJzStarting = false);
+      // A single gesture must not grow into an unbounded multi-letter video.
+      _jzLimitTimer = Timer(const Duration(seconds: 10), () {
+        unawaited(_abortJz('Gerakan terlalu lama. Ulangi satu gerakan J/Z.'));
+      });
+    } catch (error) {
+      if (generation == _jzGeneration) {
+        await _abortJz('Gerakan tidak dapat dimulai: $error');
+      }
+    }
+  }
+
+  Future<void> _sendJzFrame(
+    CameraImage image,
+    int timestamp,
+    int rotation,
+    int generation,
+  ) async {
+    try {
+      final receipt = await _jz.addCameraFrame(
+        image,
+        timestampMs: timestamp,
+        rotationDegrees: rotation,
+      );
+      if (!mounted || generation != _jzGeneration || !_isJzCapturing) return;
+      if (receipt.handDetected case final detected?) {
+        if (_handDetected != detected) setState(() => _handDetected = detected);
+      }
+    } catch (error) {
+      if (generation == _jzGeneration && _isJzCapturing) {
+        await _abortJz('Gerakan terhenti: $error');
+      }
+    }
+  }
+
+  Future<void> _finishJzGesture() {
+    if (_jzFinishOperation case final pending?) return pending;
+    if (!_isJzCapturing) return Future<void>.value();
+    late final Future<void> operation;
+    operation = _completeJzGesture().whenComplete(() {
+      if (identical(_jzFinishOperation, operation)) _jzFinishOperation = null;
+    });
+    _jzFinishOperation = operation;
+    return operation;
+  }
+
+  Future<void> _completeJzGesture() async {
+    final generation = _jzGeneration;
+    final target = _selectedTarget;
+    final inFreeSession = _isSessionActive;
+    _jzLimitTimer?.cancel();
+    _jzClock.stop();
+    setState(() {
+      _isJzCapturing = false;
+      _isJzFinishing = true;
+      _jzFeedback = 'Sedang membaca gerakan...';
+    });
+    try {
+      final result = await _jz.finishClip();
+      if (!mounted || generation != _jzGeneration) return;
+      final letter = result.letter;
+      setState(() {
+        _latestTargetPrediction = letter;
+        _latestTargetConfidence = letter == null
+            ? null
+            : result.prediction!.confidence;
+        if (letter != null) {
+          if (inFreeSession) {
+            _sessionLetters.add(letter);
+            _sessionConfidences.add(result.prediction!.confidence);
+          } else {
+            _validationPredictions.add(letter);
+          }
+        }
+        _jzFeedback = letter != null
+            ? inFreeSession
+                  ? 'Gerakan diterima. Turunkan tangan sebelum huruf berikutnya.'
+                  : letter == target
+                  ? 'Benar: terdeteksi $letter. Hasil gerakan diterima.'
+                  : 'Belum tepat: terdeteksi $letter, target $target.'
+            : switch (result.status) {
+                JzClipStatus.rejected =>
+                  result.message ?? 'Tangan kurang terlihat. Ulangi gerakan.',
+                JzClipStatus.other =>
+                  'Gerakan belum dikenali sebagai J/Z. Silakan ulangi.',
+                _ => 'Model belum yakin. Ulangi satu gerakan lengkap.',
+              };
+      });
+      // A target is a comparison, never a replacement for the predicted letter.
+      if (letter != null && !inFreeSession) {
+        try {
+          await widget.onResultSaved?.call(
+            HistoryItem.fromDetection(
+              gesture: letter,
+              confidence: result.prediction!.confidence,
+              source: 'motion',
+            ),
+          );
+        } catch (error) {
+          _showMessage(
+            'Hasil gerakan tampil, tetapi riwayat gagal disimpan: $error',
+          );
+        }
+      }
+    } catch (error) {
+      if (mounted && generation == _jzGeneration) {
+        setState(() => _jzFeedback = 'Gerakan gagal diproses. Silakan ulangi.');
+        _showMessage('Pembacaan gerakan gagal: $error');
+      }
+    } finally {
+      if (generation == _jzGeneration) {
+        if (!inFreeSession) await _stopTargetImageStream();
+        if (generation == _jzGeneration) {
+          _isJzFinishing = false;
+          _isTargetAnalysisActive = false;
+          _resetAfterMotion(inFreeSession);
+          if (mounted) {
+            setState(() {});
+            if (!inFreeSession) widget.onBusyChanged?.call(false);
+          }
+        }
+      }
+    }
+  }
+
+  void _resetAfterMotion(bool inFreeSession) {
+    _analysisGeneration++;
+    _candidateLabel = null;
+    _candidateCount = 0;
+    _lastCommittedLabel = null;
+    _releaseFrameCount = 0;
+    _lastHandSeenAt = null;
+    _latestHandLandmarks = null;
+    _lastHandDetectionAt = null;
+    _isHandDetectionPending = false;
+    _handDetected = false;
+    _awaitingStaticRelease = inFreeSession;
+  }
+
+  Future<void> _abortJz(String message) async {
+    final generation = _jzGeneration;
+    await _cancelJz();
+    if (!mounted || _jzGeneration != generation + 1) return;
+    setState(() => _jzFeedback = message);
+  }
+
+  Future<void> _cancelJz() {
+    if (_jzCancellation case final pending?) return pending;
+    if (!_isJzBusy) return Future<void>.value();
+    _jzGeneration++;
+    _jzLimitTimer?.cancel();
+    _jzClock.stop();
+    _isJzStarting = false;
+    _isJzCapturing = false;
+    _isJzFinishing = false;
+    _isJzCancelling = true;
+    final inFreeSession = _isSessionActive;
+    late final Future<void> operation;
+    operation =
+        () async {
+          try {
+            await _jz.cancelClip();
+            // Let an interrupted frontend completion unwind before accepting
+            // the next clip. Its result has already been invalidated above.
+            await _jzFinishOperation;
+            if (!inFreeSession) await _stopTargetImageStream();
+          } catch (error) {
+            _showMessage('Pembacaan gerakan gagal dibatalkan: $error');
+          } finally {
+            _isJzCancelling = false;
+            if (!inFreeSession) _isTargetAnalysisActive = false;
+            _resetAfterMotion(inFreeSession);
+            _jzFeedback = inFreeSession
+                ? 'Gerakan dibatalkan. Turunkan tangan sebelum melanjutkan.'
+                : 'Gerakan dibatalkan. Tekan Mulai gerakan untuk mengulang.';
+            if (mounted) {
+              setState(() {});
+              if (!inFreeSession) widget.onBusyChanged?.call(false);
+            }
+          }
+        }().whenComplete(() {
+          if (identical(_jzCancellation, operation)) _jzCancellation = null;
+        });
+    _jzCancellation = operation;
+    return operation;
+  }
+
   void _resetRecognitionState({
     bool clearFreeResults = false,
     bool clearTargetResults = false,
@@ -481,6 +778,8 @@ class _CameraScreenState extends State<CameraScreen>
     _isHandDetectionPending = false;
     _latestTargetPrediction = null;
     _latestTargetConfidence = null;
+    _jzFeedback = null;
+    _awaitingStaticRelease = false;
     _analysisGeneration++;
   }
 
@@ -493,6 +792,16 @@ class _CameraScreenState extends State<CameraScreen>
       frameHeight: cameraImage.height,
       requestedRotationDegrees: _imageRotation(controller),
     );
+    // Fresh raw frames reach the temporal model before the static throttles
+    // and cached-hand checks. Never mirror the input to match the preview.
+    if (_isJzCapturing) {
+      final timestamp = _jzClock.elapsedMilliseconds;
+      if (_lastJzTimestamp != null && timestamp <= _lastJzTimestamp!) return;
+      _lastJzTimestamp = timestamp;
+      unawaited(_sendJzFrame(cameraImage, timestamp, rotation, _jzGeneration));
+      return;
+    }
+    if (_isJzBusy || _isJzTarget || _isEndingSession) return;
     final now = DateTime.now();
     if (_isHandDetectionPending &&
         _lastHandDetectionAt != null &&
@@ -505,7 +814,7 @@ class _CameraScreenState extends State<CameraScreen>
       _lastHandDetectionAt = now;
       _isHandDetectionPending = true;
       try {
-        _handLandmarker?.processFrame(cameraImage, rotation);
+        _staticPipeline?.detectHands(cameraImage, rotation);
       } catch (error) {
         _isHandDetectionPending = false;
         if (mounted) {
@@ -513,6 +822,7 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
     }
+    if (_awaitingStaticRelease) return;
     final handIsFresh =
         _lastHandSeenAt != null &&
         now.difference(_lastHandSeenAt!) <= _handPresenceWindow;
@@ -544,8 +854,8 @@ class _CameraScreenState extends State<CameraScreen>
       _isProcessingFrame = false;
       return;
     }
-    SignClassifier.instance
-        .classifyCameraFrame(
+    _staticPipeline!
+        .classify(
           cameraImage,
           rotationDegrees: rotation,
           mirrorHorizontally: mirrorForModel,
@@ -561,6 +871,10 @@ class _CameraScreenState extends State<CameraScreen>
   void _acceptPrediction(SignPrediction prediction, int analysisGeneration) {
     if (!mounted ||
         !_isAnalysisActive ||
+        _isJzBusy ||
+        _isJzTarget ||
+        _awaitingStaticRelease ||
+        _isEndingSession ||
         analysisGeneration != _analysisGeneration) {
       return;
     }
@@ -688,7 +1002,22 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _endSession() async {
-    if (_isEndingSession || !_isSessionActive) return;
+    if (_isEndingSession || !_isSessionActive || _isJzStarting) return;
+    setState(() {
+      _isEndingSession = true;
+      _analysisGeneration++;
+    });
+    // Include the final complete motion decision before freezing the transcript.
+    await _finishJzGesture();
+    await _jzCancellation;
+    if (!mounted || !_isSessionActive) {
+      _isEndingSession = false;
+      if (mounted) {
+        setState(() {});
+        widget.onBusyChanged?.call(false);
+      }
+      return;
+    }
     final controller = _controller;
     final sequence = _sessionLetters.join();
     final confidence = _sessionConfidences.isEmpty
@@ -698,7 +1027,6 @@ class _CameraScreenState extends State<CameraScreen>
     // Freeze accepted letters immediately. In-flight inference cannot append
     // a letter after Stop or create a second history record.
     setState(() {
-      _isEndingSession = true;
       _isSessionActive = false;
       _analysisGeneration++;
     });
@@ -1054,10 +1382,12 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _disposeCamera() async {
     _cameraGeneration++;
+    final motionCancellation = _cancelJz();
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
     _analysisGeneration++;
     try {
+      await motionCancellation;
       await _queueCameraLifecycle(_releaseCamera);
     } catch (error) {
       if (mounted) _showMessage('Kamera gagal ditutup: $error');
@@ -1073,6 +1403,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _releaseCamera() async {
+    await _cancelJz();
     final controller = _controller;
     _controller = null;
     _isSessionActive = false;
@@ -1082,8 +1413,8 @@ class _CameraScreenState extends State<CameraScreen>
     _analysisGeneration++;
     await _handSubscription?.cancel();
     _handSubscription = null;
-    _handLandmarker?.dispose();
-    _handLandmarker = null;
+    _staticPipeline?.dispose();
+    _staticPipeline = null;
     if (controller == null) return;
     try {
       if (controller.value.isRecordingVideo) {
@@ -1125,7 +1456,12 @@ class _CameraScreenState extends State<CameraScreen>
   void dispose() {
     _photoGeneration++;
     WidgetsBinding.instance.removeObserver(this);
-    unawaited(_disposeCamera());
+    _jzLimitTimer?.cancel();
+    unawaited(
+      _disposeCamera().whenComplete(_jz.dispose).catchError((Object error) {
+        debugPrint('Penutupan kamera/JZ: $error');
+      }),
+    );
     super.dispose();
   }
 
@@ -1183,6 +1519,9 @@ class _CameraScreenState extends State<CameraScreen>
                     onPressed:
                         _cameras.length > 1 &&
                             !_isSessionActive &&
+                            !_isJzStarting &&
+                            !_isJzFinishing &&
+                            !_isJzCancelling &&
                             !_isTargetAnalysisStarting &&
                             !_isStartingSession &&
                             !_isEndingSession
@@ -1222,12 +1561,25 @@ class _CameraScreenState extends State<CameraScreen>
                   latestPrediction: _latestTargetPrediction,
                   latestConfidence: _latestTargetConfidence,
                   correctCount: validationCorrect,
+                  motionTarget: _isJzTarget,
+                  motionBusy: _isJzBusy,
+                  motionFeedback: _jzFeedback,
                 ),
                 const SizedBox(height: 10),
+                if (_isSessionActive) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: _buildJzControl(),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 SizedBox(
                   width: double.infinity,
                   height: 52,
-                  child: isTargetMode
+                  child: _isJzTarget
+                      ? _buildJzControl()
+                      : isTargetMode
                       ? FilledButton.icon(
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFFFFF1D6),
@@ -1243,7 +1595,9 @@ class _CameraScreenState extends State<CameraScreen>
                             backgroundColor: const Color(0xFFC83B31),
                             foregroundColor: Colors.white,
                           ),
-                          onPressed: _isEndingSession ? null : _endSession,
+                          onPressed: _isEndingSession || _isJzStarting
+                              ? null
+                              : _endSession,
                           icon: const Icon(Icons.stop_circle_rounded),
                           label: Text(
                             _isEndingSession
@@ -1339,7 +1693,7 @@ class _CameraScreenState extends State<CameraScreen>
               children: [
                 _CameraHeader(
                   title: 'Foto Isyarat',
-                  subtitle: 'Satu foto untuk satu huruf',
+                  subtitle: '24 huruf statis. Gunakan Video untuk J/Z.',
                   trailing: path == null
                       ? _RoundCameraButton(
                           tooltip: 'Ganti kamera',
@@ -1553,12 +1907,51 @@ class _CameraScreenState extends State<CameraScreen>
                 _isSessionActive ||
                     _isTargetAnalysisStarting ||
                     _isStartingSession ||
-                    _isEndingSession
+                    _isEndingSession ||
+                    _isJzStarting ||
+                    _isJzFinishing ||
+                    _isJzCancelling
                 ? null
                 : (value) => unawaited(_handleTargetChanged(value ?? '')),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildJzControl() {
+    final blocked =
+        _isJzStarting ||
+        _isInitializing ||
+        _isTargetAnalysisStarting ||
+        _isJzFinishing ||
+        _isJzCancelling ||
+        _isEndingSession ||
+        !(_controller?.value.isInitialized ?? false);
+    final label = _isJzStarting
+        ? 'Menyiapkan gerakan...'
+        : _isJzFinishing
+        ? 'Membaca gerakan...'
+        : _isJzCancelling
+        ? 'Membatalkan gerakan...'
+        : _isJzCapturing
+        ? 'Selesai gerakan'
+        : _isJzTarget
+        ? 'Mulai gerakan $_selectedTarget'
+        : 'Mulai J/Z';
+    return FilledButton.icon(
+      key: const ValueKey('jz-gesture-control'),
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xFFFFF1D6),
+        foregroundColor: const Color(0xFF92610A),
+      ),
+      onPressed: blocked
+          ? null
+          : _isJzCapturing
+          ? _finishJzGesture
+          : _startJzGesture,
+      icon: Icon(_isJzCapturing ? Icons.stop_circle_rounded : Icons.gesture),
+      label: Text(label),
     );
   }
 
@@ -1799,6 +2192,9 @@ class _LiveResultCard extends StatelessWidget {
     required this.latestPrediction,
     required this.latestConfidence,
     required this.correctCount,
+    this.motionTarget = false,
+    this.motionBusy = false,
+    this.motionFeedback,
   });
 
   final bool active;
@@ -1808,6 +2204,9 @@ class _LiveResultCard extends StatelessWidget {
   final String? latestPrediction;
   final double? latestConfidence;
   final int correctCount;
+  final bool motionTarget;
+  final bool motionBusy;
+  final String? motionFeedback;
 
   @override
   Widget build(BuildContext context) {
@@ -1838,7 +2237,7 @@ class _LiveResultCard extends StatelessWidget {
               ),
               child: Text(
                 target.isNotEmpty
-                    ? handDetected
+                    ? handDetected || motionTarget
                           ? _predictionIsReliable
                                 ? latestPrediction ?? '?'
                                 : '?'
@@ -1884,6 +2283,17 @@ class _LiveResultCard extends StatelessWidget {
   }
 
   String get _title {
+    if (motionTarget) {
+      if (motionBusy) return 'Membaca gerakan $target';
+      if (_predictionIsReliable) {
+        return latestPrediction == target
+            ? 'Benar: terdeteksi $target'
+            : 'Belum tepat: terdeteksi $latestPrediction';
+      }
+      return 'Latihan gerakan $target';
+    }
+    if (motionBusy) return 'Membaca satu gerakan J/Z';
+    if (motionFeedback != null) return 'Latihan bebas';
     if (target.isNotEmpty) {
       if (!active) return 'Deteksi otomatis menunggu kamera';
       if (!handDetected) return 'Tampilkan tangan untuk huruf $target';
@@ -1903,6 +2313,14 @@ class _LiveResultCard extends StatelessWidget {
   }
 
   String get _description {
+    if (motionTarget && !motionBusy && _predictionIsReliable) {
+      return '$correctCount/$eventCount gerakan diterima sesuai target. '
+          'Keyakinan ${(latestConfidence! * 100).toStringAsFixed(1)}%.';
+    }
+    if (motionFeedback != null) return motionFeedback!;
+    if (motionTarget) {
+      return 'Tekan Mulai gerakan, peragakan lengkap, lalu tekan Selesai gerakan.';
+    }
     if (target.isNotEmpty) {
       if (!active) {
         return 'Deteksi dimulai otomatis saat kamera siap; video tidak direkam.';
@@ -1920,7 +2338,7 @@ class _LiveResultCard extends StatelessWidget {
       return '$correctCount/$eventCount percobaan stabil benar | keyakinan $confidence%';
     }
     if (!active) {
-      return 'Semua huruf stabil akan disusun setelah sesi diakhiri.';
+      return 'Hasil tampil di akhir. Untuk J/Z, gunakan Mulai J/Z saat sesi berjalan.';
     }
     if (!handDetected) {
       return 'Boleh di bagian mana saja; pastikan telapak dan jari tidak terpotong.';

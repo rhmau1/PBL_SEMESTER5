@@ -171,6 +171,7 @@ class JzRecognitionService {
       return JzFrameReceipt(
         timestampMs: timestampMs,
         status: JzFrameStatus.sampled,
+        handDetected: frame.hands.isNotEmpty,
       );
     } catch (error) {
       final failure = _asBackendError(error);

@@ -42,10 +42,17 @@ class JzClipResult {
 enum JzFrameStatus { sampled, skippedBusy, skippedInterval }
 
 class JzFrameReceipt {
-  const JzFrameReceipt({required this.timestampMs, required this.status});
+  const JzFrameReceipt({
+    required this.timestampMs,
+    required this.status,
+    this.handDetected,
+  });
 
   final int timestampMs;
   final JzFrameStatus status;
+
+  /// Present only for a newly sampled detector observation.
+  final bool? handDetected;
 }
 
 class JzBackendException implements Exception {
