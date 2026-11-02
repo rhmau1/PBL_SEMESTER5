@@ -19,12 +19,12 @@ class GamificationProgress {
   });
 
   const GamificationProgress.empty()
-      : totalAttempts = 0,
-        practicedLetters = const {},
-        streakDays = 0,
-        totalXp = 0,
-        recentHistory = const [],
-        practicedDates = const [];
+    : totalAttempts = 0,
+      practicedLetters = const {},
+      streakDays = 0,
+      totalXp = 0,
+      recentHistory = const [],
+      practicedDates = const [];
 
   List<BadgeItem> get unlockedBadges =>
       BadgeItem.allBadges.where((b) => b.isUnlocked(this)).toList();
@@ -41,7 +41,7 @@ class GamificationProgress {
   int get totalBadgesCount => BadgeItem.allBadges.length;
 
   int get percentageLetters =>
-      ((practicedLetters.length / 24) * 100).clamp(0, 100).round();
+      ((practicedLetters.length / 26) * 100).clamp(0, 100).round();
 
   bool isLetterPracticed(String letter) =>
       practicedLetters.contains(letter.toUpperCase());

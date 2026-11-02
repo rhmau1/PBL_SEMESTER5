@@ -25,6 +25,36 @@ class _FakeHistoryStore implements HistoryStore {
 
 void main() {
   group('GamificationProgress Unit Tests', () {
+    test('J/Z complete 26-letter progress while the old 24-letter badge stays unlocked', () {
+      final oldLetters = 'ABCDEFGHIKLMNOPQRSTUVWXY';
+      final oldHistory = [
+        HistoryItem.fromDetection(
+          gesture: oldLetters,
+          confidence: .95,
+          source: 'video',
+        ),
+      ];
+      final before = GamificationProgress.fromHistory(oldHistory);
+      expect(before.percentageLetters, 92);
+      expect(before.unlockedBadges.map((b) => b.id), contains('perfect'));
+      final after = GamificationProgress.fromHistory([
+        ...oldHistory,
+        HistoryItem.fromDetection(
+          gesture: 'J',
+          confidence: .95,
+          source: 'motion',
+        ),
+        HistoryItem.fromDetection(
+          gesture: 'Z',
+          confidence: .95,
+          source: 'motion',
+        ),
+      ]);
+      expect(after.practicedLetters, hasLength(26));
+      expect(after.percentageLetters, 100);
+      expect(after.unlockedBadges.map((b) => b.id), contains('perfect'));
+      expect(after.totalAttempts, 3);
+    });
     test('empty history gives 0 progress and 0 badges', () {
       final progress = GamificationProgress.fromHistory([]);
       expect(progress.totalAttempts, 0);
@@ -63,10 +93,10 @@ void main() {
       final progress = GamificationProgress.fromHistory(items);
       expect(progress.practicedLetters.length, 5);
       expect(progress.unlockedCount, 2); // keep_learning + good
-      expect(
-        progress.unlockedBadges.map((b) => b.id).toSet(),
-        {'keep_learning', 'good'},
-      );
+      expect(progress.unlockedBadges.map((b) => b.id).toSet(), {
+        'keep_learning',
+        'good',
+      });
       expect(progress.nextBadge?.id, 'excellent');
     });
 
@@ -83,10 +113,11 @@ void main() {
       final progress = GamificationProgress.fromHistory(items);
       expect(progress.practicedLetters.length, 15);
       expect(progress.unlockedCount, 3); // keep_learning + good + excellent
-      expect(
-        progress.unlockedBadges.map((b) => b.id).toSet(),
-        {'keep_learning', 'good', 'excellent'},
-      );
+      expect(progress.unlockedBadges.map((b) => b.id).toSet(), {
+        'keep_learning',
+        'good',
+        'excellent',
+      });
       expect(progress.nextBadge?.id, 'perfect');
     });
 
@@ -103,10 +134,12 @@ void main() {
       final progress = GamificationProgress.fromHistory(items);
       expect(progress.practicedLetters.length, 24);
       expect(progress.unlockedCount, 4); // keep, good, excellent, perfect
-      expect(
-        progress.unlockedBadges.map((b) => b.id).toSet(),
-        {'keep_learning', 'good', 'excellent', 'perfect'},
-      );
+      expect(progress.unlockedBadges.map((b) => b.id).toSet(), {
+        'keep_learning',
+        'good',
+        'excellent',
+        'perfect',
+      });
       expect(progress.nextBadge?.id, 'impossible');
     });
   });
@@ -126,9 +159,7 @@ void main() {
           overrides: [
             historyStoreProvider.overrideWithValue(_FakeHistoryStore(items)),
           ],
-          child: const MaterialApp(
-            home: BadgesPage(),
-          ),
+          child: const MaterialApp(home: BadgesPage()),
         ),
       );
       await tester.pumpAndSettle();
@@ -201,9 +232,7 @@ void main() {
           overrides: [
             historyStoreProvider.overrideWithValue(_FakeHistoryStore(items)),
           ],
-          child: const MaterialApp(
-            home: LearningProgressPage(),
-          ),
+          child: const MaterialApp(home: LearningProgressPage()),
         ),
       );
       await tester.pumpAndSettle();

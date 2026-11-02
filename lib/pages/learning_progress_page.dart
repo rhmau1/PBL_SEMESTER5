@@ -19,9 +19,32 @@ class LearningProgressPage extends ConsumerWidget {
   static const _border = Color(0xFFE8EDF5);
 
   static const _alphabet = [
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-    'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-    'U', 'V', 'W', 'X', 'Y', 'Z',
+    'A',
+    'B',
+    'C',
+    'D',
+    'E',
+    'F',
+    'G',
+    'H',
+    'I',
+    'J',
+    'K',
+    'L',
+    'M',
+    'N',
+    'O',
+    'P',
+    'Q',
+    'R',
+    'S',
+    'T',
+    'U',
+    'V',
+    'W',
+    'X',
+    'Y',
+    'Z',
   ];
 
   @override
@@ -31,7 +54,7 @@ class LearningProgressPage extends ConsumerWidget {
     final seenBadges = ref.watch(seenBadgesProvider);
 
     final learnedCount = progress.practicedLetters.length;
-    final totalLetters = 24; // Model supports 24 static letters
+    const totalLetters = 26; // 24 static letters and two video gestures.
     final percent = progress.percentageLetters;
     final progressRatio = (learnedCount / totalLetters).clamp(0.0, 1.0);
 
@@ -100,7 +123,9 @@ class LearningProgressPage extends ConsumerWidget {
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: _paleBlue,
                                 borderRadius: BorderRadius.circular(12),
@@ -119,10 +144,7 @@ class LearningProgressPage extends ConsumerWidget {
                         const SizedBox(height: 4),
                         Text(
                           '$learnedCount of $totalLetters letters learned',
-                          style: const TextStyle(
-                            color: _muted,
-                            fontSize: 13,
-                          ),
+                          style: const TextStyle(color: _muted, fontSize: 13),
                         ),
                         const SizedBox(height: 14),
 
@@ -133,8 +155,9 @@ class LearningProgressPage extends ConsumerWidget {
                             value: progressRatio,
                             minHeight: 7,
                             backgroundColor: const Color(0xFFDCE6F5),
-                            valueColor:
-                                const AlwaysStoppedAnimation<Color>(_blue),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              _blue,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 18),
@@ -144,10 +167,10 @@ class LearningProgressPage extends ConsumerWidget {
                           spacing: 7,
                           runSpacing: 7,
                           children: _alphabet.map((letter) {
-                            final isPracticed =
-                                progress.isLetterPracticed(letter);
-                            final isDynamic =
-                                letter == 'J' || letter == 'Z';
+                            final isPracticed = progress.isLetterPracticed(
+                              letter,
+                            );
+                            final isDynamic = letter == 'J' || letter == 'Z';
 
                             return Container(
                               width: 38,
@@ -156,15 +179,15 @@ class LearningProgressPage extends ConsumerWidget {
                                 color: isPracticed
                                     ? _blue
                                     : (isDynamic
-                                        ? const Color(0xFFFFF8E9)
-                                        : const Color(0xFFF6F8FC)),
+                                          ? const Color(0xFFFFF8E9)
+                                          : const Color(0xFFF6F8FC)),
                                 borderRadius: BorderRadius.circular(11),
                                 border: Border.all(
                                   color: isPracticed
                                       ? _blue
                                       : (isDynamic
-                                          ? const Color(0xFFFFDF83)
-                                          : const Color(0xFFE2E8F0)),
+                                            ? const Color(0xFFFFDF83)
+                                            : const Color(0xFFE2E8F0)),
                                   width: 1,
                                 ),
                               ),
@@ -175,8 +198,8 @@ class LearningProgressPage extends ConsumerWidget {
                                     color: isPracticed
                                         ? Colors.white
                                         : (isDynamic
-                                            ? const Color(0xFF9A4D12)
-                                            : const Color(0xFF64748B)),
+                                              ? const Color(0xFF9A4D12)
+                                              : const Color(0xFF64748B)),
                                     fontSize: 14,
                                     fontWeight: isPracticed
                                         ? FontWeight.w800
@@ -203,7 +226,7 @@ class LearningProgressPage extends ConsumerWidget {
                               ),
                             ),
                             const Text(
-                              'Target: 24 huruf',
+                              'Target: 26 huruf',
                               style: TextStyle(
                                 color: _muted,
                                 fontSize: 12,
@@ -240,7 +263,10 @@ class LearningProgressPage extends ConsumerWidget {
                           children: [
                             Row(
                               children: [
-                                const Text('🔥', style: TextStyle(fontSize: 18)),
+                                const Text(
+                                  '🔥',
+                                  style: TextStyle(fontSize: 18),
+                                ),
                                 const SizedBox(width: 6),
                                 Text(
                                   '${progress.streakDays}-day streak',
@@ -269,7 +295,13 @@ class LearningProgressPage extends ConsumerWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: List.generate(7, (index) {
                             final dayNames = [
-                              'S', 'S', 'R', 'K', 'J', 'S', 'M'
+                              'S',
+                              'S',
+                              'R',
+                              'K',
+                              'J',
+                              'S',
+                              'M',
                             ];
                             final isPassed = index < progress.streakDays;
 
@@ -291,12 +323,18 @@ class LearningProgressPage extends ConsumerWidget {
                                   ),
                                   child: Center(
                                     child: isPassed
-                                        ? const Icon(Icons.check_rounded,
-                                            size: 18, color: Colors.white)
-                                        : const Text('·',
+                                        ? const Icon(
+                                            Icons.check_rounded,
+                                            size: 18,
+                                            color: Colors.white,
+                                          )
+                                        : const Text(
+                                            '·',
                                             style: TextStyle(
-                                                fontSize: 22,
-                                                color: Color(0xFF94A3B8))),
+                                              fontSize: 22,
+                                              color: Color(0xFF94A3B8),
+                                            ),
+                                          ),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -358,7 +396,9 @@ class LearningProgressPage extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(10),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 4),
+                            horizontal: 6,
+                            vertical: 4,
+                          ),
                           child: Text(
                             'View all · ${progress.unlockedCount} / ${progress.totalBadgesCount}',
                             style: const TextStyle(
@@ -382,8 +422,8 @@ class LearningProgressPage extends ConsumerWidget {
                       itemBuilder: (context, index) {
                         final badge = BadgeItem.allBadges[index];
                         final isUnlocked = badge.isUnlocked(progress);
-                        final isNew = isUnlocked &&
-                            !seenBadges.contains(badge.id);
+                        final isNew =
+                            isUnlocked && !seenBadges.contains(badge.id);
 
                         return Material(
                           color: Colors.white,
@@ -437,8 +477,8 @@ class LearningProgressPage extends ConsumerWidget {
                                       color: isNew
                                           ? const Color(0xFF7D3EC0)
                                           : (isUnlocked
-                                              ? const Color(0xFF00A879)
-                                              : _muted),
+                                                ? const Color(0xFF00A879)
+                                                : _muted),
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -531,7 +571,9 @@ class LearningProgressPage extends ConsumerWidget {
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: _paleBlue,
                                 borderRadius: BorderRadius.circular(12),

@@ -376,6 +376,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                             value: item.sourceLabel,
                             icon: switch (item.source) {
                               'video' => Icons.videocam_rounded,
+                              'motion' => Icons.gesture,
                               'photo' => Icons.camera_alt_rounded,
                               'upload' => Icons.photo_library_rounded,
                               _ => Icons.sign_language_rounded,
@@ -641,6 +642,7 @@ class _HistoryItemTile extends StatelessWidget {
     const muted = Color(0xFF7585A2);
     final icon = switch (item.source) {
       'video' => Icons.videocam_outlined,
+      'motion' => Icons.gesture,
       'photo' => Icons.camera_alt_outlined,
       'upload' => Icons.photo_library_outlined,
       _ => Icons.history,

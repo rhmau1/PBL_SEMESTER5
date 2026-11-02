@@ -82,6 +82,11 @@ void main() {
           confidence: 0.91,
           source: 'upload',
         ).copyWith(id: 3),
+        HistoryItem.fromDetection(
+          gesture: 'JZ',
+          confidence: 0.96,
+          source: 'motion',
+        ).copyWith(id: 4),
       ]);
     await _showHistory(tester, store);
 
@@ -90,12 +95,15 @@ void main() {
     expect(find.text('ABC'), findsOneWidget);
     expect(find.text('PHOTO'), findsOneWidget);
     expect(find.text('UPLOAD'), findsNothing);
+    expect(find.text('JZ'), findsOneWidget);
+    expect(find.textContaining('Latihan gerakan J/Z'), findsOneWidget);
 
     await tester.tap(find.text('Upload'));
     await tester.pumpAndSettle();
     expect(find.text('UPLOAD'), findsOneWidget);
     expect(find.text('ABC'), findsNothing);
     expect(find.text('PHOTO'), findsNothing);
+    expect(find.text('JZ'), findsNothing);
   });
 
   testWidgets('empty camera and upload filters explain no detections yet', (
