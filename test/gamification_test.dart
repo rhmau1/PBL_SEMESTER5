@@ -7,6 +7,7 @@ import 'package:sign_language/models/history_item.dart';
 import 'package:sign_language/pages/badges_page.dart';
 import 'package:sign_language/pages/learning_progress_page.dart';
 import 'package:sign_language/providers/history_provider.dart';
+import 'package:sign_language/providers/gamification_provider.dart';
 import 'package:sign_language/services/database_helper.dart';
 
 class _FakeHistoryStore implements HistoryStore {
@@ -216,6 +217,64 @@ void main() {
   });
 
   group('LearningProgressPage UI Tests', () {
+    testWidgets('weekly checkmarks follow dates in the current week', (
+      tester,
+    ) async {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final monday = today.subtract(Duration(days: today.weekday - 1));
+      String date(DateTime value) =>
+          '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+      final dates = [
+        today,
+        today.subtract(const Duration(days: 1)),
+        monday.subtract(const Duration(days: 13)),
+      ];
+      final progress = GamificationProgress.fromHistory(
+        dates
+            .map(
+              (day) => HistoryItem.fromDetection(
+                gesture: 'A',
+                confidence: .95,
+                source: 'video',
+              ).copyWith(date: date(day)),
+            )
+            .toList(),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [gamificationProvider.overrideWithValue(progress)],
+          child: const MaterialApp(home: LearningProgressPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.textContaining('-day streak'), 200);
+      final row = tester
+          .widgetList<Row>(find.byType(Row))
+          .singleWhere(
+            (row) =>
+                row.children.length == 7 &&
+                row.children.every(
+                  (child) =>
+                      child is Column &&
+                      child.children.length == 3 &&
+                      child.children.last is Text,
+                ),
+          );
+      final actual = row.children.map((child) {
+        final circle = (child as Column).children.first as Container;
+        return (circle.decoration as BoxDecoration).color ==
+            const Color(0xFF2864F0);
+      }).toList();
+      final expected = List.generate(
+        7,
+        (index) => dates.any(
+          (day) => !day.isBefore(monday) && day.weekday == index + 1,
+        ),
+      );
+      expect(actual, expected);
+    });
+
     testWidgets('renders alphabet journey, streak, and recent sessions', (
       tester,
     ) async {

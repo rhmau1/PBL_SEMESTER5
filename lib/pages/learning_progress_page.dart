@@ -50,6 +50,16 @@ class LearningProgressPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final progress = ref.watch(gamificationProvider);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final monday = today.subtract(Duration(days: today.weekday - 1));
+    final nextMonday = monday.add(const Duration(days: 7));
+    final practicedWeekdays = progress.practicedDates
+        .map(DateTime.tryParse)
+        .whereType<DateTime>()
+        .where((date) => !date.isBefore(monday) && date.isBefore(nextMonday))
+        .map((date) => date.weekday)
+        .toSet();
     final seenNotifier = ref.watch(seenBadgesProvider.notifier);
     final seenBadges = ref.watch(seenBadgesProvider);
 
@@ -303,7 +313,12 @@ class LearningProgressPage extends ConsumerWidget {
                               'S',
                               'M',
                             ];
-                            final isPassed = index < progress.streakDays;
+                            // The dots represent the actual Monday-to-Sunday
+                            // practice days. A streak count alone cannot tell
+                            // which weekday was practiced.
+                            final isPassed = practicedWeekdays.contains(
+                              index + 1,
+                            );
 
                             return Column(
                               children: [
