@@ -9,6 +9,7 @@ import 'pages/history_page.dart';
 import 'pages/home_page.dart';
 import 'providers/history_provider.dart';
 import 'widgets/app_bottom_nav.dart';
+import 'screens/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,12 +24,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const green = Color(0xFF2E7D32);
+    const blue = Color(0xFF2864F0);
     return MaterialApp(
       title: 'LatihIsyarat',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: green),
+        colorScheme: ColorScheme.fromSeed(seedColor: blue),
         scaffoldBackgroundColor: const Color(0xFFF5F5F5),
         fontFamily: 'Roboto',
         useMaterial3: true,
@@ -38,7 +39,22 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: HomeShell(cameraEnabled: cameraEnabled),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF2864F0),
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: const Color(0xFF090D16),
+        fontFamily: 'Roboto',
+        useMaterial3: true,
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          ),
+        ),
+      ),
+      themeMode: ThemeMode.system,
+      home: SplashScreen(nextScreen: HomeShell(cameraEnabled: cameraEnabled)),
     );
   }
 }

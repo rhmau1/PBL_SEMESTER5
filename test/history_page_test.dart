@@ -59,11 +59,14 @@ void main() {
     await _showHistory(tester, _HistoryStore());
     expect(find.text('ABC'), findsOneWidget);
     expect(find.textContaining('Latihan bebas'), findsOneWidget);
+    expect(find.text('Model C'), findsOneWidget);
     expect(find.textContaining('Keyakinan model: 95.0%'), findsOneWidget);
     expect(find.byType(BottomNavigationBar), findsNothing);
     await tester.tap(find.text('ABC'));
     await tester.pumpAndSettle();
     expect(find.text('Rata-rata keyakinan huruf: 95.0%'), findsOneWidget);
+    expect(find.text('Model Deteksi'), findsOneWidget);
+    expect(find.text('Model C'), findsWidgets);
     expect(find.text('/recordings/session.mp4'), findsOneWidget);
   });
 

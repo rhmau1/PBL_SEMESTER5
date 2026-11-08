@@ -14,13 +14,14 @@ class AppBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return BottomNavigationBar(
       currentIndex: currentIndex,
       onTap: enabled ? onSelected : null,
       type: BottomNavigationBarType.fixed,
-      selectedItemColor: const Color(0xFF2864F0),
-      unselectedItemColor: const Color(0xFF7585A2),
-      backgroundColor: Colors.white,
+      selectedItemColor: colors.primary,
+      unselectedItemColor: colors.onSurfaceVariant,
+      backgroundColor: colors.surface,
       elevation: 0,
       iconSize: 24,
       selectedLabelStyle: const TextStyle(
@@ -64,13 +65,14 @@ class _SelectedNavIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF0FF),
+        color: colors.primaryContainer,
         borderRadius: BorderRadius.circular(30),
       ),
-      child: Icon(icon, color: const Color(0xFF2864F0), size: 24),
+      child: Icon(icon, color: colors.onPrimaryContainer, size: 24),
     );
   }
 }

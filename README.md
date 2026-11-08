@@ -33,7 +33,7 @@ Video kamera langsung:
 
 ```text
 Frame kamera → MediaPipe menemukan tangan → crop persegi mengikuti tangan
-→ koreksi orientasi → grayscale 28×28 → model TFLite
+→ koreksi orientasi → praproses sesuai model terpilih → model TFLite
 → pemeriksaan keyakinan dan kestabilan → rangkaian huruf
 ```
 
@@ -70,6 +70,14 @@ tidak memperbarui bridge tersebut.
 - Output `[1, 24]`; urutan huruf mengikuti `assets/models/labels.json`.
 - Model mengenali A–Y tanpa J dan Z. MediaPipe mendeteksi tangan, sedangkan
   model CNN memprediksi huruf.
+- Model C (`camera_robust_v1`) menerima grayscale 28×28 dengan nilai 0–255;
+  normalisasi `1/255` sudah berada di dalam model.
+- Model E menerima RGB NHWC 96×96, crop persegi berpusat pada tangan, dan
+  nilai kanal dinormalisasi ke `[-1, 1]` menggunakan preprocessing MobileNetV2.
+  Urutan outputnya sama dengan `assets/models/labels.json`.
+- Model C tetap menjadi pilihan awal. Model C dan Model E dapat dipilih dari
+  kontrol model pada Video, Foto, dan Upload. Belum ada metrik kamera khusus
+  Model E yang dicatat di repository ini.
 
 Hasil eksperimen dalam metadata: akurasi dataset **99,3028%**, macro-F1
 **99,3325%**. Beberapa tahap eksperimen dibandingkan pada official test set,

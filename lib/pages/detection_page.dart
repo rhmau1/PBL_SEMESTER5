@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/history_item.dart';
+import '../services/sign_classifier.dart';
 import '../screens/camera_screen.dart';
 import '../screens/upload_screen.dart';
 
@@ -33,6 +34,7 @@ class DetectionPage extends StatefulWidget {
 class _DetectionPageState extends State<DetectionPage> {
   late int _selectedTab = widget.initialTab;
   bool _busy = false;
+  SignModel _selectedModel = SignModel.modelC;
 
   void _setBusy(bool value) {
     if (!mounted || value == _busy) return;
@@ -48,6 +50,7 @@ class _DetectionPageState extends State<DetectionPage> {
   @override
   Widget build(BuildContext context) {
     final isCamera = _selectedTab != 2;
+    final colors = Theme.of(context).colorScheme;
     final selector = SegmentedButton<int>(
       showSelectedIcon: false,
       segments: const [
@@ -81,15 +84,18 @@ class _DetectionPageState extends State<DetectionPage> {
         backgroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
               ? const Color(0xFF2864F0)
-              : const Color(0xFFE9EEF8),
+              : colors.surfaceContainerHighest,
         ),
         foregroundColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
               ? Colors.white
-              : const Color(0xFF64748B),
+              : colors.onSurfaceVariant,
         ),
         side: const WidgetStatePropertyAll(
           BorderSide(color: Colors.transparent),
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
     );
@@ -106,6 +112,9 @@ class _DetectionPageState extends State<DetectionPage> {
               child: UploadScreen(
                 onResultSaved: widget.onResultSaved,
                 onBusyChanged: _setBusy,
+                selectedModel: _selectedModel,
+                onModelChanged: (model) =>
+                    setState(() => _selectedModel = model),
               ),
             ),
           ],
@@ -123,6 +132,8 @@ class _DetectionPageState extends State<DetectionPage> {
           topOverlayHeight: detectionOverlayHeight,
           onResultSaved: widget.onResultSaved,
           onBusyChanged: _setBusy,
+          selectedModel: _selectedModel,
+          onModelChanged: (model) => setState(() => _selectedModel = model),
         ),
         Positioned(
           top: MediaQuery.paddingOf(context).top + detectionOverlayGap,

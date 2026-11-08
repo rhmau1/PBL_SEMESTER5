@@ -87,6 +87,11 @@ ValueNotifier<CameraPreviewGeometry?> cameraPreviewGeometry(
   CameraController controller,
 ) => _geometry[controller] ??= ValueNotifier(null);
 
+void invalidateCameraPreviewGeometry(CameraController controller) {
+  _requestGeneration[controller] = (_requestGeneration[controller] ?? 0) + 1;
+  cameraPreviewGeometry(controller).value = null;
+}
+
 /// Reads the native surface transform without rewriting controller.previewSize.
 /// The app-owned bridge supplies TransformationInfo omitted by CameraX's API.
 Future<void> synchronizeCameraPreviewSize(

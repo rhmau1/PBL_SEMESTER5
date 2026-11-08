@@ -124,6 +124,77 @@ class ImagePreprocessor {
     );
   }
 
+  static CameraFrameCrops cameraImageToRgbCrops(
+    CameraImage cameraImage, {
+    required int rotationDegrees,
+    required bool mirrorHorizontally,
+    required List<Offset> normalizedLandmarks,
+  }) {
+    final landmarks = orientNormalizedPoints(
+      normalizedLandmarks,
+      rotationDegrees: 0,
+      mirrorHorizontally: mirrorHorizontally,
+    );
+    final bounds = _boundsForPoints(landmarks);
+    if (cameraImage.format.group == ImageFormatGroup.yuv420 ||
+        cameraImage.format.group == ImageFormatGroup.nv21) {
+      final orientedSize = _orientedSize(
+        cameraImage.width,
+        cameraImage.height,
+        rotationDegrees,
+      );
+      final contextBounds = _squareCropAroundBounds(
+        orientedSize,
+        bounds,
+        paddingScale: _contextPaddingScale,
+        minimumSideFraction: _contextMinimumSideFraction,
+      );
+      final tightBounds = _squareCropAroundBounds(
+        orientedSize,
+        bounds,
+        paddingScale: _tightPaddingScale,
+        minimumSideFraction: _tightMinimumSideFraction,
+      );
+      return CameraFrameCrops(
+        context: _sampleRgbCrop(
+          cameraImage,
+          contextBounds,
+          rotationDegrees: rotationDegrees,
+          mirrorHorizontally: mirrorHorizontally,
+        ),
+        tight: _sampleRgbCrop(
+          cameraImage,
+          tightBounds,
+          rotationDegrees: rotationDegrees,
+          mirrorHorizontally: mirrorHorizontally,
+        ),
+        orientedLandmarks: landmarks,
+      );
+    }
+
+    if (cameraImage.format.group != ImageFormatGroup.bgra8888) {
+      throw UnsupportedError(
+        'Format kamera ${cameraImage.format.group.name} belum didukung.',
+      );
+    }
+    var oriented = _bgraToRgb(cameraImage);
+    if (rotationDegrees != 0) {
+      oriented = img.copyRotate(oriented, angle: rotationDegrees.toDouble());
+    }
+    if (mirrorHorizontally) oriented = img.flipHorizontal(oriented);
+    return CameraFrameCrops(
+      context: _cropAroundHand(
+        oriented,
+        bounds,
+        paddingScale: _contextPaddingScale,
+        minimumSideFraction: _contextMinimumSideFraction,
+        preserveColor: true,
+      ),
+      tight: _cropAroundLandmarks(oriented, landmarks, preserveColor: true),
+      orientedLandmarks: landmarks,
+    );
+  }
+
   static CameraFrameCrops imageToGrayHandCrops(
     img.Image image, {
     required List<Offset> normalizedLandmarks,
@@ -148,6 +219,33 @@ class ImagePreprocessor {
           paddingScale: _tightPaddingScale,
           minimumSideFraction: _tightMinimumSideFraction,
         ),
+      ),
+      orientedLandmarks: List<Offset>.unmodifiable(normalizedLandmarks),
+    );
+  }
+
+  static CameraFrameCrops imageToRgbHandCrops(
+    img.Image image, {
+    required List<Offset> normalizedLandmarks,
+  }) {
+    if (normalizedLandmarks.length != 21) {
+      throw ArgumentError('Crop tangan membutuhkan 21 landmark.');
+    }
+    final bounds = _boundsForPoints(normalizedLandmarks);
+    return CameraFrameCrops(
+      context: _cropAroundHand(
+        image,
+        bounds,
+        paddingScale: _contextPaddingScale,
+        minimumSideFraction: _contextMinimumSideFraction,
+        preserveColor: true,
+      ),
+      tight: _cropAroundHand(
+        image,
+        bounds,
+        paddingScale: _tightPaddingScale,
+        minimumSideFraction: _tightMinimumSideFraction,
+        preserveColor: true,
       ),
       orientedLandmarks: List<Offset>.unmodifiable(normalizedLandmarks),
     );
@@ -248,6 +346,48 @@ class ImagePreprocessor {
           (x) => <double>[_pixelLuminance(resized, x, y).toDouble()],
           growable: false,
         ),
+        growable: false,
+      ),
+    ];
+  }
+
+  static img.Image toModelRgbImage(
+    img.Image source, {
+    double cropFraction = 1,
+    Rect? normalizedCrop,
+  }) {
+    final cropped = normalizedCrop == null
+        ? _centerCrop(source, cropFraction)
+        : _cropAroundHand(source, normalizedCrop, preserveColor: true);
+    return img.copyResize(
+      cropped,
+      width: 96,
+      height: 96,
+      interpolation: img.Interpolation.average,
+    );
+  }
+
+  static List<List<List<List<double>>>> rgbImageToInput(img.Image resized) {
+    if (resized.width != 96 ||
+        resized.height != 96 ||
+        resized.numChannels < 3) {
+      throw ArgumentError.value(
+        '${resized.width}x${resized.height}x${resized.numChannels}',
+        'resized',
+        'Gambar input RGB model harus berukuran 96x96 dengan 3 kanal.',
+      );
+    }
+    return <List<List<List<double>>>>[
+      List<List<List<double>>>.generate(
+        96,
+        (y) => List<List<double>>.generate(96, (x) {
+          final pixel = resized.getPixel(x, y);
+          return <double>[
+            pixel.r / 127.5 - 1,
+            pixel.g / 127.5 - 1,
+            pixel.b / 127.5 - 1,
+          ];
+        }, growable: false),
         growable: false,
       ),
     ];
@@ -387,6 +527,138 @@ class ImagePreprocessor {
     return output;
   }
 
+  static img.Image _sampleRgbCrop(
+    CameraImage cameraImage,
+    Rect crop, {
+    required int rotationDegrees,
+    required bool mirrorHorizontally,
+  }) {
+    const outputSize = 96;
+    final orientedSize = _orientedSize(
+      cameraImage.width,
+      cameraImage.height,
+      rotationDegrees,
+    );
+    final padding = _cameraBorderRgb(cameraImage);
+    final output = img.Image(
+      width: outputSize,
+      height: outputSize,
+      numChannels: 3,
+    );
+    for (var outputY = 0; outputY < outputSize; outputY++) {
+      for (var outputX = 0; outputX < outputSize; outputX++) {
+        var red = 0;
+        var green = 0;
+        var blue = 0;
+        for (final sampleY in const <double>[0.25, 0.75]) {
+          for (final sampleX in const <double>[0.25, 0.75]) {
+            final orientedX =
+                (crop.left + (outputX + sampleX) * crop.width / outputSize) /
+                orientedSize.width;
+            final orientedY =
+                (crop.top + (outputY + sampleY) * crop.height / outputSize) /
+                orientedSize.height;
+            final color =
+                orientedX < 0 ||
+                    orientedX >= 1 ||
+                    orientedY < 0 ||
+                    orientedY >= 1
+                ? padding
+                : _cameraPixelRgb(
+                    cameraImage,
+                    _orientedToSensorPoint(
+                      Offset(orientedX, orientedY),
+                      rotationDegrees: rotationDegrees,
+                      mirroredHorizontally: mirrorHorizontally,
+                    ),
+                  );
+            red += color[0];
+            green += color[1];
+            blue += color[2];
+          }
+        }
+        output.setPixelRgb(outputX, outputY, red ~/ 4, green ~/ 4, blue ~/ 4);
+      }
+    }
+    return output;
+  }
+
+  static List<int> _cameraBorderRgb(CameraImage cameraImage) {
+    const points = <Offset>[
+      Offset(0.02, 0.02),
+      Offset(0.50, 0.02),
+      Offset(0.98, 0.02),
+      Offset(0.02, 0.50),
+      Offset(0.98, 0.50),
+      Offset(0.02, 0.98),
+      Offset(0.50, 0.98),
+      Offset(0.98, 0.98),
+    ];
+    final colors = points
+        .map((point) => _cameraPixelRgb(cameraImage, point))
+        .toList(growable: false);
+    return List<int>.generate(3, (channel) {
+      final values = colors.map((color) => color[channel]).toList()..sort();
+      return (values[3] + values[4]) ~/ 2;
+    }, growable: false);
+  }
+
+  static List<int> _cameraPixelRgb(CameraImage cameraImage, Offset point) {
+    final x = (point.dx * cameraImage.width).floor().clamp(
+      0,
+      cameraImage.width - 1,
+    );
+    final y = (point.dy * cameraImage.height).floor().clamp(
+      0,
+      cameraImage.height - 1,
+    );
+    if (cameraImage.format.group == ImageFormatGroup.bgra8888) {
+      final plane = cameraImage.planes.first;
+      final offset = y * plane.bytesPerRow + x * (plane.bytesPerPixel ?? 4);
+      return <int>[
+        plane.bytes[offset + 2],
+        plane.bytes[offset + 1],
+        plane.bytes[offset],
+      ];
+    }
+    final planes = cameraImage.planes;
+    final yPlane = planes.first;
+    final luminance = yPlane.bytes[y * yPlane.bytesPerRow + x];
+    int u;
+    int v;
+    if (planes.length >= 3) {
+      final uPlane = planes[1];
+      final vPlane = planes[2];
+      final uOffset =
+          (y ~/ 2) * uPlane.bytesPerRow +
+          (x ~/ 2) * (uPlane.bytesPerPixel ?? 1);
+      final vOffset =
+          (y ~/ 2) * vPlane.bytesPerRow +
+          (x ~/ 2) * (vPlane.bytesPerPixel ?? 1);
+      u = uPlane.bytes[uOffset];
+      v = vPlane.bytes[vOffset];
+    } else if (cameraImage.format.group == ImageFormatGroup.nv21) {
+      final chromaOffset =
+          yPlane.bytesPerRow * cameraImage.height +
+          (y ~/ 2) * yPlane.bytesPerRow +
+          (x ~/ 2) * 2;
+      v = yPlane.bytes[chromaOffset];
+      u = yPlane.bytes[chromaOffset + 1];
+    } else {
+      throw UnsupportedError(
+        'Plane warna kamera ${cameraImage.format.group.name} tidak tersedia.',
+      );
+    }
+    final c = (luminance - 16).clamp(0, 255);
+    final d = u - 128;
+    final e = v - 128;
+    return <int>[
+      ((298 * c + 409 * e + 128) >> 8).clamp(0, 255),
+      ((298 * c - 100 * d - 208 * e + 128) >> 8).clamp(0, 255),
+      ((298 * c + 516 * d + 128) >> 8).clamp(0, 255),
+    ];
+  }
+
   static int _cameraBorderLuminance(
     CameraImage cameraImage, {
     required int rotationDegrees,
@@ -449,6 +721,7 @@ class ImagePreprocessor {
     Rect normalizedCrop, {
     double paddingScale = 1.55,
     double minimumSideFraction = 0,
+    bool preserveColor = false,
   }) {
     final crop = _squareCropAroundBounds(
       Size(source.width.toDouble(), source.height.toDouble()),
@@ -456,33 +729,83 @@ class ImagePreprocessor {
       paddingScale: paddingScale,
       minimumSideFraction: minimumSideFraction,
     );
-    return _cropImageWithPadding(source, crop);
+    return _cropImageWithPadding(source, crop, preserveColor: preserveColor);
   }
 
-  static img.Image _cropImageWithPadding(img.Image source, Rect crop) {
+  static img.Image _cropImageWithPadding(
+    img.Image source,
+    Rect crop, {
+    bool preserveColor = false,
+  }) {
     final side = crop.width
         .round()
         .clamp(1, source.width + source.height)
         .toInt();
     final startX = crop.left.round();
     final startY = crop.top.round();
-    final paddingLuminance = _imageBorderLuminance(source);
-    final output = img.Image(width: side, height: side, numChannels: 1);
+    final paddingLuminance = preserveColor
+        ? null
+        : _imageBorderLuminance(source);
+    final paddingColor = preserveColor ? _imageBorderColor(source) : null;
+    final output = img.Image(
+      width: side,
+      height: side,
+      numChannels: preserveColor ? 3 : 1,
+    );
     for (var y = 0; y < side; y++) {
       final sourceY = startY + y;
       for (var x = 0; x < side; x++) {
         final sourceX = startX + x;
-        final luminance =
+        final isInBounds =
             sourceX >= 0 &&
-                sourceX < source.width &&
-                sourceY >= 0 &&
-                sourceY < source.height
-            ? _pixelLuminance(source, sourceX, sourceY)
-            : paddingLuminance;
-        output.setPixelR(x, y, luminance);
+            sourceX < source.width &&
+            sourceY >= 0 &&
+            sourceY < source.height;
+        if (preserveColor) {
+          if (isInBounds) {
+            output.setPixel(x, y, source.getPixel(sourceX, sourceY));
+          } else {
+            final color = paddingColor!;
+            output.setPixelRgb(x, y, color[0], color[1], color[2]);
+          }
+        } else {
+          output.setPixelR(
+            x,
+            y,
+            isInBounds
+                ? _pixelLuminance(source, sourceX, sourceY)
+                : paddingLuminance!,
+          );
+        }
       }
     }
     return output;
+  }
+
+  static List<int> _imageBorderColor(img.Image source) {
+    final maxX = source.width - 1;
+    final maxY = source.height - 1;
+    final points = <Offset>[
+      const Offset(0, 0),
+      Offset(maxX / 2, 0),
+      Offset(maxX.toDouble(), 0),
+      Offset(0, maxY / 2),
+      Offset(maxX.toDouble(), maxY / 2),
+      Offset(0, maxY.toDouble()),
+      Offset(maxX / 2, maxY.toDouble()),
+      Offset(maxX.toDouble(), maxY.toDouble()),
+    ];
+    return List<int>.generate(3, (channel) {
+      final values = points.map((point) {
+        final pixel = source.getPixel(point.dx.round(), point.dy.round());
+        return switch (channel) {
+          0 => pixel.r.round(),
+          1 => pixel.g.round(),
+          _ => pixel.b.round(),
+        };
+      }).toList()..sort();
+      return (values[3] + values[4]) ~/ 2;
+    }, growable: false);
   }
 
   static num _imageBorderLuminance(img.Image source) {
@@ -508,13 +831,15 @@ class ImagePreprocessor {
 
   static img.Image _cropAroundLandmarks(
     img.Image source,
-    List<Offset> normalizedLandmarks,
-  ) {
+    List<Offset> normalizedLandmarks, {
+    bool preserveColor = false,
+  }) {
     return _cropAroundHand(
       source,
       _boundsForPoints(normalizedLandmarks),
       paddingScale: _tightPaddingScale,
       minimumSideFraction: _tightMinimumSideFraction,
+      preserveColor: preserveColor,
     );
   }
 
@@ -530,5 +855,29 @@ class ImagePreprocessor {
       order: img.ChannelOrder.bgra,
     );
     return img.grayscale(source);
+  }
+
+  static img.Image _bgraToRgb(CameraImage cameraImage) {
+    final plane = cameraImage.planes.first;
+    final source = img.Image.fromBytes(
+      width: cameraImage.width,
+      height: cameraImage.height,
+      bytes: plane.bytes.buffer,
+      bytesOffset: plane.bytes.offsetInBytes,
+      rowStride: plane.bytesPerRow,
+      numChannels: 4,
+      order: img.ChannelOrder.bgra,
+    );
+    final rgb = img.Image(
+      width: source.width,
+      height: source.height,
+      numChannels: 3,
+    );
+    for (var y = 0; y < source.height; y++) {
+      for (var x = 0; x < source.width; x++) {
+        rgb.setPixel(x, y, source.getPixel(x, y));
+      }
+    }
+    return rgb;
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -24,6 +25,8 @@ class CameraScreen extends StatefulWidget {
     this.onResultSaved,
     this.onBusyChanged,
     this.topOverlayHeight = 0,
+    this.selectedModel = SignModel.modelC,
+    this.onModelChanged,
   });
 
   final bool cameraEnabled;
@@ -31,6 +34,8 @@ class CameraScreen extends StatefulWidget {
   final Future<void> Function(HistoryItem)? onResultSaved;
   final ValueChanged<bool>? onBusyChanged;
   final double topOverlayHeight;
+  final SignModel selectedModel;
+  final ValueChanged<SignModel>? onModelChanged;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -82,6 +87,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool? _lastFrameMirrored;
   bool _isStartingSession = false;
   bool _isEndingSession = false;
+  late SignModel _selectedModel = widget.selectedModel;
   bool _isTakingPhoto = false;
   bool _isClassifyingPhoto = false;
   bool _isSavingPhotoHistory = false;
@@ -96,6 +102,73 @@ class _CameraScreenState extends State<CameraScreen>
   static Future<void>? _cameraLifecycleQueue;
 
   bool get _isAnalysisActive => _isSessionActive || _isTargetAnalysisActive;
+
+  Future<void> _showModelPicker() async {
+    if (_isTakingPhoto || _isClassifyingPhoto || _isSavingPhotoHistory) return;
+    var selectedModel = _selectedModel;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final colors = Theme.of(context).colorScheme;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pilih Model AI',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Pilih model yang digunakan untuk deteksi isyarat.',
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 18),
+                for (final model in SignModel.values) ...[
+                  _ModelOption(
+                    key: ValueKey('camera-model-option-${model.id}'),
+                    model: model,
+                    selected: selectedModel == model,
+                    onTap: () => setSheetState(() => selectedModel = model),
+                  ),
+                  if (model != SignModel.values.last)
+                    const SizedBox(height: 10),
+                ],
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const ValueKey('camera-model-confirm'),
+                    onPressed: () {
+                      setState(() {
+                        if (_selectedModel != selectedModel) {
+                          _selectedModel = selectedModel;
+                          _photoPrediction = null;
+                          _photoHistorySaved = false;
+                          _resetRecognitionState(clearTargetResults: true);
+                        }
+                      });
+                      widget.onModelChanged?.call(selectedModel);
+                      Navigator.of(sheetContext).pop();
+                    },
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Gunakan Model Terpilih'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -124,6 +197,9 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void didUpdateWidget(covariant CameraScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedModel != widget.selectedModel) {
+      _selectedModel = widget.selectedModel;
+    }
     if (oldWidget.cameraEnabled == widget.cameraEnabled &&
         oldWidget.photoMode == widget.photoMode) {
       return;
@@ -321,7 +397,7 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isStartingSession = true);
     widget.onBusyChanged?.call(true);
     try {
-      await SignClassifier.instance.initialize();
+      await SignClassifier.instance.initialize(model: _selectedModel);
       if (!_isCurrentCameraRequest(cameraGeneration) ||
           !identical(controller, _controller)) {
         return;
@@ -338,6 +414,10 @@ class _CameraScreenState extends State<CameraScreen>
             !identical(controller, _controller)) {
           throw StateError('Kamera tidak lagi aktif.');
         }
+        // CameraX rebinds its use cases when recording starts; reapply the
+        // portrait target rotation immediately before that transition.
+        await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
+        invalidateCameraPreviewGeometry(controller);
         await controller.startVideoRecording(onAvailable: _onCameraFrame);
         await _refreshPreviewSize(controller);
       });
@@ -411,7 +491,7 @@ class _CameraScreenState extends State<CameraScreen>
       _isTargetAnalysisStarting = true;
     }
     try {
-      await SignClassifier.instance.initialize();
+      await SignClassifier.instance.initialize(model: _selectedModel);
       if (!mounted ||
           !_appIsActive ||
           !identical(controller, _controller) ||
@@ -453,11 +533,6 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (error) {
       if (mounted) _showMessage('Deteksi otomatis gagal dihentikan: $error');
     }
-  }
-
-  void _resetTargetResults() {
-    if (_selectedTarget.isEmpty) return;
-    setState(() => _resetRecognitionState(clearTargetResults: true));
   }
 
   void _resetRecognitionState({
@@ -550,6 +625,7 @@ class _CameraScreenState extends State<CameraScreen>
           rotationDegrees: rotation,
           mirrorHorizontally: mirrorForModel,
           normalizedLandmarks: landmarks,
+          model: _selectedModel,
         )
         .then((prediction) => _acceptPrediction(prediction, analysisGeneration))
         .catchError((Object error) {
@@ -705,13 +781,17 @@ class _CameraScreenState extends State<CameraScreen>
     String? videoPath;
     try {
       await _queueCameraLifecycle(() async {
-        if (!identical(controller, _controller)) return;
-        if (controller?.value.isRecordingVideo ?? false) {
-          final recording = await controller!.stopVideoRecording();
+        if (controller == null || !identical(controller, _controller)) return;
+        if (controller.value.isRecordingVideo) {
+          invalidateCameraPreviewGeometry(controller);
+          final recording = await controller.stopVideoRecording();
+          // Stopping recording rebinds the preview use case. Restore its
+          // portrait target rotation before refreshing the preview transform.
+          await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
           await _refreshPreviewSize(controller);
           videoPath = await _saveRecording(recording);
-        } else if (controller?.value.isStreamingImages ?? false) {
-          await controller!.stopImageStream();
+        } else if (controller.value.isStreamingImages) {
+          await controller.stopImageStream();
           await _refreshPreviewSize(controller);
         }
       });
@@ -733,6 +813,7 @@ class _CameraScreenState extends State<CameraScreen>
             gesture: sequence,
             confidence: confidence,
             source: 'video',
+            modelId: _selectedModel.id,
             videoPath: videoPath,
           ),
         );
@@ -805,11 +886,15 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isClassifyingPhoto = true);
     widget.onBusyChanged?.call(true);
     try {
-      // classifyFile decodes EXIF orientation before grayscale/resizing.
+      // classifyFile applies EXIF orientation and model-specific resizing.
       // This plugin exposes MediaPipe only for live CameraImage frames;
       // a still image is never given stale landmarks from another frame.
       final prediction =
-          _photoPrediction ?? await SignClassifier.instance.classifyFile(path);
+          _photoPrediction ??
+          await SignClassifier.instance.classifyFile(
+            path,
+            model: _selectedModel,
+          );
       if (!mounted || generation != _photoGeneration) return;
       setState(() => _photoPrediction = prediction);
       if (prediction.confidence >= _minimumConfidence) {
@@ -819,6 +904,7 @@ class _CameraScreenState extends State<CameraScreen>
             gesture: prediction.label,
             confidence: prediction.confidence,
             source: 'photo',
+            modelId: _selectedModel.id,
             imagePath: path,
           ),
         );
@@ -1132,6 +1218,7 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   Widget build(BuildContext context) {
     if (widget.photoMode) return _buildPhotoScreen();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isTargetMode = _selectedTarget.isNotEmpty;
     final eventCount = _selectedTarget.isEmpty
         ? _sessionLetters.length
@@ -1141,103 +1228,137 @@ class _CameraScreenState extends State<CameraScreen>
               .where((label) => label == _selectedTarget)
               .length
         : 0;
+    final latestConfidence = isTargetMode
+        ? _latestTargetConfidence
+        : _sessionConfidences.isEmpty
+        ? null
+        : _sessionConfidences.last;
+    final showLiveResults = _isSessionActive || isTargetMode;
+    final showSetupControls = !_isSessionActive && !isTargetMode;
     return ColoredBox(
       key: const PageStorageKey('camera'),
-      color: const Color(0xFFF4F7FC),
+      color: isDark ? const Color(0xFF090D16) : const Color(0xFFF4F7FC),
       child: Stack(
         fit: StackFit.expand,
         children: [
           _buildCameraPreview(),
-          const IgnorePointer(
+          IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   stops: [0, 0.24, 0.62, 1],
-                  colors: [
-                    Color(0xFFF4F7FC),
-                    Color(0x18FFFFFF),
-                    Color(0x12FFFFFF),
-                    Color(0xFFF4F7FC),
-                  ],
+                  colors: isDark
+                      ? const [
+                          Color(0xFF090D16),
+                          Color(0x18090D16),
+                          Color(0x12090D16),
+                          Color(0xFF090D16),
+                        ]
+                      : const [
+                          Color(0xFFF4F7FC),
+                          Color(0x18FFFFFF),
+                          Color(0x12FFFFFF),
+                          Color(0xFFF4F7FC),
+                        ],
                 ),
               ),
             ),
           ),
-          const Positioned.fill(child: IgnorePointer(child: _DetectionFrame())),
           SafeArea(
             minimum: EdgeInsets.fromLTRB(
               16,
-              MediaQuery.paddingOf(context).top + 12 + widget.topOverlayHeight,
+              MediaQuery.paddingOf(context).top + widget.topOverlayHeight + 12,
               16,
-              102,
+              16,
             ),
             child: Column(
               children: [
-                _CameraHeader(
-                  title: 'Kamera Latihan',
-                  subtitle: 'Deteksi isyarat secara langsung',
-                  trailing: _RoundCameraButton(
-                    tooltip: 'Ganti kamera',
-                    onPressed:
-                        _cameras.length > 1 &&
-                            !_isSessionActive &&
-                            !_isTargetAnalysisStarting &&
-                            !_isStartingSession &&
-                            !_isEndingSession
-                        ? _switchCamera
-                        : null,
-                    icon: Icons.cameraswitch_rounded,
+                if (showSetupControls) ...[
+                  Container(
+                    key: const ValueKey('camera-controls'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xE6101724)
+                          : Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF263246)
+                            : const Color(0xFFE2E9F3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(child: _buildModeSelector()),
+                        const SizedBox(width: 8),
+                        _StatusPill(
+                          active: _isAnalysisActive,
+                          handDetected: _handDetected,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE2E9F3)),
-                  ),
-                  child: Row(
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
-                      Expanded(child: _buildModeSelector()),
+                      Expanded(
+                        child: _ActiveModelCard(
+                          model: _selectedModel.name,
+                          onTap:
+                              _isTakingPhoto ||
+                                  _isClassifyingPhoto ||
+                                  _isSavingPhotoHistory
+                              ? null
+                              : _showModelPicker,
+                        ),
+                      ),
                       const SizedBox(width: 8),
-                      _StatusPill(
-                        active: _isAnalysisActive,
-                        handDetected: _handDetected,
+                      _RoundCameraButton(
+                        key: const ValueKey('camera-switch-button'),
+                        tooltip: 'Ganti kamera',
+                        onPressed:
+                            _cameras.length > 1 &&
+                                !_isTargetAnalysisStarting &&
+                                !_isStartingSession &&
+                                !_isEndingSession
+                            ? _switchCamera
+                            : null,
+                        icon: Icons.cameraswitch_rounded,
                       ),
                     ],
                   ),
+                ],
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: _DetectionFrame(),
+                  ),
                 ),
-                const Spacer(),
-                _LiveResultCard(
-                  active: _isAnalysisActive,
-                  handDetected: _handDetected,
-                  eventCount: eventCount,
-                  target: _selectedTarget,
-                  latestPrediction: _latestTargetPrediction,
-                  latestConfidence: _latestTargetConfidence,
-                  correctCount: validationCorrect,
-                ),
-                const SizedBox(height: 10),
+                if (showLiveResults) ...[
+                  _LiveResultCard(
+                    key: const ValueKey('camera-live-results'),
+                    active: _isAnalysisActive || _isTargetAnalysisStarting,
+                    handDetected: _handDetected,
+                    eventCount: eventCount,
+                    target: _selectedTarget,
+                    latestPrediction: _latestTargetPrediction,
+                    latestConfidence: latestConfidence,
+                    correctCount: validationCorrect,
+                    sessionText: _sessionLetters.join(' - '),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 SizedBox(
+                  key: const ValueKey('camera-primary-action'),
                   width: double.infinity,
                   height: 52,
-                  child: isTargetMode
-                      ? FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFF1D6),
-                            foregroundColor: const Color(0xFF92610A),
-                          ),
-                          onPressed: _resetTargetResults,
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: Text('Reset hasil uji $_selectedTarget'),
-                        )
-                      : _isSessionActive || _isEndingSession
+                  child: _isSessionActive || _isEndingSession
                       ? FilledButton.icon(
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFFC83B31),
@@ -1248,7 +1369,26 @@ class _CameraScreenState extends State<CameraScreen>
                           label: Text(
                             _isEndingSession
                                 ? 'Menyimpan hasil...'
-                                : 'Akhiri dan lihat hasil',
+                                : 'Selesai / Simpan Sesi Latihan',
+                          ),
+                        )
+                      : isTargetMode
+                      ? FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFC83B31),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(17),
+                            ),
+                          ),
+                          onPressed: _isTargetAnalysisStarting
+                              ? null
+                              : () => unawaited(_handleTargetChanged('')),
+                          icon: const Icon(Icons.stop_circle_rounded),
+                          label: Text(
+                            _isTargetAnalysisStarting
+                                ? 'Menyiapkan deteksi...'
+                                : 'Selesai Latihan Huruf',
                           ),
                         )
                       : FilledButton.icon(
@@ -1270,7 +1410,7 @@ class _CameraScreenState extends State<CameraScreen>
                           label: Text(
                             _isStartingSession
                                 ? 'Menyiapkan deteksi...'
-                                : 'Mulai latihan bebas',
+                                : 'Mulai Latihan Bebas',
                           ),
                         ),
                 ),
@@ -1286,11 +1426,12 @@ class _CameraScreenState extends State<CameraScreen>
     final path = _photoPath;
     final prediction = _photoPrediction;
     final busy = _isTakingPhoto || _isClassifyingPhoto || _isSavingPhotoHistory;
+    final colors = Theme.of(context).colorScheme;
     final reliable =
         prediction != null && prediction.confidence >= _minimumConfidence;
     return ColoredBox(
       key: const PageStorageKey('camera_photo'),
-      color: const Color(0xFFF4F7FC),
+      color: colors.surface,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -1301,92 +1442,80 @@ class _CameraScreenState extends State<CameraScreen>
               File(path),
               key: ValueKey(path),
               fit: BoxFit.contain,
-              errorBuilder: (_, error, stackTrace) => const Center(
+              errorBuilder: (_, error, stackTrace) => Center(
                 child: Text(
                   'Foto tidak dapat dibuka.',
-                  style: TextStyle(color: Color(0xFF172642)),
+                  style: TextStyle(color: colors.onSurface),
                 ),
               ),
             ),
-          const IgnorePointer(
+          IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xFFF4F7FC),
-                    Color(0x00000000),
-                    Color(0xFFF4F7FC),
+                    colors.surface,
+                    colors.surface.withValues(alpha: 0),
+                    colors.surface,
                   ],
                   stops: [0, 0.5, 1],
                 ),
               ),
             ),
           ),
-          if (path == null)
-            const Positioned.fill(
-              child: IgnorePointer(child: _DetectionFrame()),
-            ),
           SafeArea(
             minimum: EdgeInsets.fromLTRB(
               16,
-              MediaQuery.paddingOf(context).top + 12 + widget.topOverlayHeight,
+              MediaQuery.paddingOf(context).top + widget.topOverlayHeight + 12,
               16,
-              102,
+              16,
             ),
             child: Column(
               children: [
-                _CameraHeader(
-                  title: 'Foto Isyarat',
-                  subtitle: 'Satu foto untuk satu huruf',
-                  trailing: path == null
-                      ? _RoundCameraButton(
-                          tooltip: 'Ganti kamera',
-                          onPressed:
-                              _cameras.length > 1 && !busy && !_isInitializing
-                              ? _switchCamera
-                              : null,
-                          icon: Icons.cameraswitch_rounded,
-                        )
-                      : null,
-                ),
-                if (prediction == null) ...[
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEAF0FF),
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: const Text(
-                        'MODE FOTO · SATU HURUF',
-                        style: TextStyle(
-                          color: Color(0xFF2864F0),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
-                        ),
+                const SizedBox(height: 70),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ActiveModelCard(
+                        model: _selectedModel.name,
+                        onTap: busy ? null : _showModelPicker,
                       ),
                     ),
+                    if (path == null) ...[
+                      const SizedBox(width: 8),
+                      _RoundCameraButton(
+                        key: const ValueKey('camera-switch-button'),
+                        tooltip: 'Ganti kamera',
+                        onPressed:
+                            _cameras.length > 1 && !busy && !_isInitializing
+                            ? _switchCamera
+                            : null,
+                        icon: Icons.cameraswitch_rounded,
+                      ),
+                    ],
+                  ],
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: path == null
+                        ? const _DetectionFrame()
+                        : const SizedBox.expand(),
                   ),
-                ],
-                const Spacer(),
+                ),
                 if (prediction != null || path != null)
                   Container(
+                    key: const ValueKey('photo-result-card'),
                     width: double.infinity,
                     padding: const EdgeInsets.all(17),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.94),
+                      color: colors.surface.withValues(alpha: 0.96),
                       borderRadius: BorderRadius.circular(22),
-                      boxShadow: const [
+                      boxShadow: [
                         BoxShadow(
-                          color: Color(0x180E2343),
+                          color: colors.shadow.withValues(alpha: 0.12),
                           blurRadius: 18,
                           offset: Offset(0, 7),
                         ),
@@ -1400,7 +1529,7 @@ class _CameraScreenState extends State<CameraScreen>
                             reliable ? prediction.label : 'Belum yakin',
                             style: TextStyle(
                               color: reliable
-                                  ? const Color(0xFF00A879)
+                                  ? colors.primary
                                   : const Color(0xFFAE7010),
                               fontSize: reliable ? 48 : 24,
                               fontWeight: FontWeight.w900,
@@ -1408,8 +1537,8 @@ class _CameraScreenState extends State<CameraScreen>
                           ),
                           Text(
                             'Keyakinan model ${(prediction.confidence * 100).toStringAsFixed(1)}%',
-                            style: const TextStyle(
-                              color: Color(0xFF7585A2),
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
                               fontSize: 13,
                             ),
                           ),
@@ -1424,8 +1553,8 @@ class _CameraScreenState extends State<CameraScreen>
                               ? 'Ambil ulang dengan tangan lebih jelas dan pencahayaan cukup.'
                               : 'Periksa foto, lalu tekan Deteksi. Ambil ulang jika tangan kurang jelas.',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFF52627D),
+                          style: TextStyle(
+                            color: colors.onSurfaceVariant,
                             fontSize: 13,
                           ),
                         ),
@@ -1435,6 +1564,7 @@ class _CameraScreenState extends State<CameraScreen>
                 const SizedBox(height: 14),
                 if (path == null)
                   SizedBox(
+                    key: const ValueKey('photo-primary-action'),
                     width: double.infinity,
                     height: 58,
                     child: FilledButton.icon(
@@ -1443,7 +1573,7 @@ class _CameraScreenState extends State<CameraScreen>
                           ? _takePhoto
                           : null,
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2864F0),
+                        backgroundColor: colors.primary,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(17),
@@ -1457,12 +1587,13 @@ class _CameraScreenState extends State<CameraScreen>
                   )
                 else
                   Row(
+                    key: const ValueKey('photo-primary-action'),
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF2864F0),
-                            side: const BorderSide(color: Color(0xFFDCE4F1)),
+                            foregroundColor: colors.primary,
+                            side: BorderSide(color: colors.outlineVariant),
                             minimumSize: const Size(0, 58),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(17),
@@ -1509,14 +1640,15 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Widget _buildModeSelector() {
+    final colors = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
+        color: colors.surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFDCE4F1)),
-        boxShadow: const [
+        border: Border.all(color: colors.outlineVariant),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x120E2343),
+            color: colors.shadow.withValues(alpha: 0.08),
             blurRadius: 14,
             offset: Offset(0, 5),
           ),
@@ -1528,12 +1660,12 @@ class _CameraScreenState extends State<CameraScreen>
           child: DropdownButton<String>(
             value: _selectedTarget,
             isExpanded: true,
-            dropdownColor: Colors.white,
+            dropdownColor: colors.surface,
             borderRadius: BorderRadius.circular(18),
-            iconEnabledColor: const Color(0xFF2864F0),
-            iconDisabledColor: const Color(0xFF9AA8BD),
-            style: const TextStyle(
-              color: Color(0xFF172642),
+            iconEnabledColor: colors.primary,
+            iconDisabledColor: colors.onSurface.withValues(alpha: 0.38),
+            style: TextStyle(
+              color: colors.onSurface,
               fontSize: 13,
               fontWeight: FontWeight.w800,
             ),
@@ -1563,18 +1695,17 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Widget _buildCameraPreview() {
+    final colors = Theme.of(context).colorScheme;
     if (!widget.cameraEnabled) {
-      return const Center(
+      return Center(
         child: Text(
           'Kamera dinonaktifkan untuk pengujian.',
-          style: TextStyle(color: Color(0xFF52627D)),
+          style: TextStyle(color: colors.onSurfaceVariant),
         ),
       );
     }
     if (_isInitializing) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF2864F0)),
-      );
+      return Center(child: CircularProgressIndicator(color: colors.primary));
     }
     if (_cameraError != null) {
       return Center(
@@ -1583,21 +1714,21 @@ class _CameraScreenState extends State<CameraScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.no_photography_outlined,
-                color: Color(0xFF2864F0),
+                color: colors.primary,
                 size: 48,
               ),
               const SizedBox(height: 12),
               Text(
                 _cameraError!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFF172642)),
+                style: TextStyle(color: colors.onSurface),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF2864F0),
+                  foregroundColor: colors.primary,
                 ),
                 onPressed: _initializeCameras,
                 child: const Text('Coba lagi'),
@@ -1609,10 +1740,10 @@ class _CameraScreenState extends State<CameraScreen>
     }
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) {
-      return const Center(
+      return Center(
         child: Text(
           'Kamera belum siap.',
-          style: TextStyle(color: Color(0xFF52627D)),
+          style: TextStyle(color: colors.onSurfaceVariant),
         ),
       );
     }
@@ -1620,68 +1751,9 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
-class _CameraHeader extends StatelessWidget {
-  const _CameraHeader({
-    required this.title,
-    required this.subtitle,
-    this.trailing,
-  });
-
-  final String title;
-  final String subtitle;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E9F3)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x160E2343),
-            blurRadius: 16,
-            offset: Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFF172642),
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFF596B87),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-        ],
-      ),
-    );
-  }
-}
-
 class _RoundCameraButton extends StatelessWidget {
   const _RoundCameraButton({
+    super.key,
     required this.tooltip,
     required this.onPressed,
     required this.icon,
@@ -1697,9 +1769,10 @@ class _RoundCameraButton extends StatelessWidget {
       style: IconButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF2864F0),
-        disabledBackgroundColor: const Color(0xFFE8EDF5),
-        disabledForegroundColor: const Color(0xFF9AA8BD),
+        disabledBackgroundColor: Colors.white,
+        disabledForegroundColor: const Color(0xFF9AAAC4),
         minimumSize: const Size.square(48),
+        shape: const CircleBorder(),
         elevation: 2,
       ),
       tooltip: tooltip,
@@ -1714,21 +1787,112 @@ class _DetectionFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: FractionallySizedBox(
-        widthFactor: 0.78,
-        heightFactor: 0.42,
-        child: Container(
-          key: const ValueKey('camera-detection-frame'),
-          decoration: BoxDecoration(
-            color: const Color(0x182864F0),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0xCC2864F0), width: 2),
+    final colors = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final side = math.min(
+          constraints.maxWidth * 0.9,
+          constraints.maxHeight * 0.94,
+        );
+        return Center(
+          child: SizedBox(
+            width: side,
+            height: side,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    key: const ValueKey('camera-detection-frame'),
+                    painter: _DashedRoundedBorderPainter(
+                      color: colors.primary.withValues(alpha: 0.82),
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 10,
+                  left: 8,
+                  right: 8,
+                  child: Center(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.primary,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.back_hand_rounded,
+                              color: Colors.white,
+                              size: 15,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Posisikan tangan di sini',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
+}
+
+class _DashedRoundedBorderPainter extends CustomPainter {
+  const _DashedRoundedBorderPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(24)),
+      );
+    for (final metric in path.computeMetrics()) {
+      for (var distance = 0.0; distance < metric.length; distance += 16) {
+        canvas.drawPath(
+          metric.extractPath(distance, math.min(distance + 9, metric.length)),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashedRoundedBorderPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _StatusPill extends StatelessWidget {
@@ -1739,14 +1903,15 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
+        color: colors.surface.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFDCE4F1)),
-        boxShadow: const [
+        border: Border.all(color: colors.outlineVariant),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x120E2343),
+            color: colors.shadow.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: Offset(0, 4),
           ),
@@ -1765,7 +1930,7 @@ class _StatusPill extends StatelessWidget {
                   : Icons.pause_circle_outline,
               size: 10,
               color: active && handDetected
-                  ? const Color(0xFF00A879)
+                  ? colors.primary
                   : active
                   ? const Color(0xFFE3A21A)
                   : const Color(0xFF7585A2),
@@ -1777,8 +1942,8 @@ class _StatusPill extends StatelessWidget {
                   : active
                   ? 'CARI TANGAN'
                   : 'SIAP',
-              style: const TextStyle(
-                color: Color(0xFF172642),
+              style: TextStyle(
+                color: colors.onSurface,
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
               ),
@@ -1790,8 +1955,139 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
+class _ModelOption extends StatelessWidget {
+  const _ModelOption({
+    super.key,
+    required this.model,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final SignModel model;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: selected
+          ? colors.primaryContainer.withValues(alpha: 0.55)
+          : colors.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.memory_rounded, color: colors.primary, size: 28),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      model.name,
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      model == SignModel.modelC
+                          ? 'Model grayscale camera_robust_v1'
+                          : 'Model RGB MobileNetV2',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: colors.primary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveModelCard extends StatelessWidget {
+  const _ActiveModelCard({required this.onTap, required this.model});
+
+  final VoidCallback? onTap;
+  final String model;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface.withValues(alpha: 0.94),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: const ValueKey('camera-model-selector'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.memory_rounded, color: colors.primary, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MODEL AI',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'LatihIsyarat $model',
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.expand_more_rounded, color: colors.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LiveResultCard extends StatelessWidget {
   const _LiveResultCard({
+    super.key,
     required this.active,
     required this.handDetected,
     required this.eventCount,
@@ -1799,6 +2095,7 @@ class _LiveResultCard extends StatelessWidget {
     required this.latestPrediction,
     required this.latestConfidence,
     required this.correctCount,
+    required this.sessionText,
   });
 
   final bool active;
@@ -1808,98 +2105,110 @@ class _LiveResultCard extends StatelessWidget {
   final String? latestPrediction;
   final double? latestConfidence;
   final int correctCount;
+  final String sessionText;
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isReliable = _predictionIsReliable && handDetected;
+    final output = target.isNotEmpty
+        ? isReliable
+              ? latestPrediction!
+              : '—'
+        : sessionText.isNotEmpty
+        ? sessionText
+        : active && handDetected
+        ? 'Menganalisis...'
+        : '—';
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.97),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E9F3)),
-        boxShadow: const [
+        color: colors.surface.withValues(alpha: 0.97),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: colors.outlineVariant),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x140E2343),
+            color: colors.shadow.withValues(alpha: 0.12),
             blurRadius: 18,
             offset: Offset(0, 7),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              children: [
+                Icon(
+                  active ? Icons.sensors_rounded : Icons.sensors_off_rounded,
+                  color: active ? colors.primary : colors.onSurfaceVariant,
+                  size: 17,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    target.isNotEmpty
+                        ? 'LIVE STREAM UJI HURUF $target'
+                        : 'LIVE STREAM DETEKSI ISYARAT',
+                    style: TextStyle(
+                      color: colors.primary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.6,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  latestConfidence == null
+                      ? active
+                            ? 'LIVE'
+                            : 'SIAP'
+                      : 'Keyakinan ${(latestConfidence! * 100).toStringAsFixed(1)}%',
+                  style: TextStyle(
+                    color: latestConfidence == null
+                        ? colors.onSurfaceVariant
+                        : colors.primary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
             Container(
-              width: 48,
-              height: 48,
-              alignment: Alignment.center,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFEAF0FF),
-                borderRadius: BorderRadius.circular(14),
+                color: colors.surfaceContainerHighest.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: colors.outlineVariant),
               ),
               child: Text(
-                target.isNotEmpty
-                    ? handDetected
-                          ? _predictionIsReliable
-                                ? latestPrediction ?? '?'
-                                : '?'
-                          : '?'
-                    : active
-                    ? '$eventCount'
-                    : '-',
-                style: const TextStyle(
-                  color: Color(0xFF2864F0),
-                  fontSize: 24,
+                output,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: output == '—'
+                      ? colors.onSurfaceVariant
+                      : colors.onSurface,
+                  fontSize: target.isNotEmpty ? 22 : 16,
                   fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
                 ),
               ),
             ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _title,
-                    style: const TextStyle(
-                      color: Color(0xFF172642),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _description,
-                    style: const TextStyle(
-                      color: Color(0xFF7585A2),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 5),
+            Text(
+              _description,
+              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11),
             ),
           ],
         ),
       ),
     );
-  }
-
-  String get _title {
-    if (target.isNotEmpty) {
-      if (!active) return 'Deteksi otomatis menunggu kamera';
-      if (!handDetected) return 'Tampilkan tangan untuk huruf $target';
-      if (latestPrediction == null) return 'Menganalisis target $target';
-      if (!_predictionIsReliable) return 'Belum yakin, tahan pose sebentar';
-      return latestPrediction == target
-          ? 'Benar: terdeteksi $target'
-          : 'Belum tepat: terdeteksi $latestPrediction';
-    }
-    if (!active) {
-      return 'Tekan Mulai untuk latihan bebas';
-    }
-    if (!handDetected) {
-      return 'Tampilkan tangan ke kamera';
-    }
-    return 'Tangan terdeteksi';
   }
 
   String get _description {

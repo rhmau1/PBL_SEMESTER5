@@ -8,6 +8,7 @@ class HistoryItem {
   final String time;
   final double? confidence;
   final String source;
+  final String? modelId;
   final String? imagePath;
   final String? videoPath;
 
@@ -19,6 +20,7 @@ class HistoryItem {
     required this.time,
     this.confidence,
     this.source = 'unknown',
+    this.modelId,
     this.imagePath,
     this.videoPath,
   });
@@ -27,6 +29,7 @@ class HistoryItem {
     required String gesture,
     required double confidence,
     required String source,
+    String modelId = 'camera_robust_v1',
     String? imagePath,
     String? videoPath,
   }) {
@@ -42,6 +45,7 @@ class HistoryItem {
       time: '${two(now.hour)}:${two(now.minute)}:${two(now.second)}',
       confidence: confidence,
       source: source,
+      modelId: modelId,
       imagePath: imagePath,
       videoPath: videoPath,
     );
@@ -58,6 +62,13 @@ class HistoryItem {
       ? accuracy
       : '${(confidence! * 100).toStringAsFixed(1)}%';
 
+  String get modelLabel => switch (modelId) {
+    'camera_robust_v1' => 'Model C',
+    'model_e' => 'Model E (MobileNet V2)',
+    null || '' => 'Model C',
+    _ => modelId!,
+  };
+
   factory HistoryItem.fromMap(Map<String, dynamic> map) {
     return HistoryItem(
       id: (map['id'] as num?)?.toInt(),
@@ -67,6 +78,7 @@ class HistoryItem {
       time: map['time'] as String,
       confidence: (map['confidence'] as num?)?.toDouble(),
       source: map['source'] as String? ?? 'unknown',
+      modelId: map['model_id'] as String? ?? 'camera_robust_v1',
       imagePath: map['image_path'] as String?,
       videoPath: map['video_path'] as String?,
     );
@@ -80,6 +92,7 @@ class HistoryItem {
     'time': time,
     'confidence': confidence,
     'source': source,
+    'model_id': modelId,
     'image_path': imagePath,
     'video_path': videoPath,
   };
@@ -92,6 +105,7 @@ class HistoryItem {
     String? time,
     double? confidence,
     String? source,
+    String? modelId,
     String? imagePath,
     String? videoPath,
   }) => HistoryItem(
@@ -102,6 +116,7 @@ class HistoryItem {
     time: time ?? this.time,
     confidence: confidence ?? this.confidence,
     source: source ?? this.source,
+    modelId: modelId ?? this.modelId,
     imagePath: imagePath ?? this.imagePath,
     videoPath: videoPath ?? this.videoPath,
   );

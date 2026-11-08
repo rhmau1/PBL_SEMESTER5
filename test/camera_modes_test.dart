@@ -9,6 +9,7 @@ import 'package:image/image.dart' as img;
 import 'package:sign_language/models/history_item.dart';
 import 'package:sign_language/pages/detection_page.dart';
 import 'package:sign_language/screens/camera_screen.dart';
+import 'package:sign_language/services/sign_classifier.dart';
 
 const _front = CameraDescription(
   name: 'front',
@@ -120,6 +121,7 @@ class _CameraBackend extends CameraPlatform {
 Widget _screen({
   bool photoMode = false,
   bool enabled = false,
+  double topOverlayHeight = 0,
   ValueChanged<bool>? onBusyChanged,
   Future<void> Function(HistoryItem)? onResultSaved,
 }) => MaterialApp(
@@ -127,6 +129,7 @@ Widget _screen({
     body: CameraScreen(
       cameraEnabled: enabled,
       photoMode: photoMode,
+      topOverlayHeight: topOverlayHeight,
       onBusyChanged: onBusyChanged,
       onResultSaved: onResultSaved,
     ),
@@ -151,13 +154,35 @@ void main() {
   testWidgets('Foto has capture controls, without video or target controls', (
     tester,
   ) async {
-    await tester.pumpWidget(_screen(photoMode: true));
-    expect(find.text('Foto Isyarat'), findsOneWidget);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(_screen(photoMode: true, topOverlayHeight: 52));
+    expect(find.text('Foto Isyarat'), findsNothing);
     expect(
       find.byKey(const ValueKey('camera-detection-frame')),
       findsOneWidget,
     );
     expect(find.text('Ambil foto'), findsOneWidget);
+    expect(find.byKey(const ValueKey('camera-model-selector')), findsOneWidget);
+    expect(find.byKey(const ValueKey('camera-switch-button')), findsOneWidget);
+    final modelCard = tester.getRect(
+      find.byKey(const ValueKey('camera-model-selector')),
+    );
+    final cameraToggle = tester.getRect(
+      find.byKey(const ValueKey('camera-switch-button')),
+    );
+    expect(cameraToggle.center.dy, closeTo(modelCard.center.dy, 1));
+    expect(modelCard.left, lessThan(cameraToggle.left));
+    final frame = tester.getRect(
+      find.byKey(const ValueKey('camera-detection-frame')),
+    );
+    final action = tester.getRect(
+      find.byKey(const ValueKey('photo-primary-action')),
+    );
+    expect(frame.height, greaterThan(200));
+    expect(frame.bottom, lessThan(action.top - 8));
     expect(find.byType(DropdownButton<String>), findsNothing);
     expect(find.text('Mulai latihan bebas'), findsNothing);
     expect(find.text('Deteksi'), findsNothing);
@@ -167,17 +192,171 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('Video keeps a visible detection frame with a compact header', (
+  testWidgets('Foto model and camera controls align with Video controls', (
     tester,
   ) async {
-    await tester.pumpWidget(_screen());
-    expect(find.text('Kamera Latihan'), findsOneWidget);
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_screen(topOverlayHeight: 52));
+    final videoModel = tester.getRect(
+      find.byKey(const ValueKey('camera-model-selector')),
+    );
+    await tester.pumpWidget(_screen(photoMode: true, topOverlayHeight: 52));
+    final photoModel = tester.getRect(
+      find.byKey(const ValueKey('camera-model-selector')),
+    );
+    final photoToggle = tester.getRect(
+      find.byKey(const ValueKey('camera-switch-button')),
+    );
+    final photoFrame = tester.getRect(
+      find.byKey(const ValueKey('camera-detection-frame')),
+    );
+
+    expect(photoModel.top, closeTo(videoModel.top, 1));
+    expect(photoToggle.center.dy, closeTo(photoModel.center.dy, 1));
+    expect(photoFrame.top, greaterThan(photoModel.bottom));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('Video keeps a visible detection frame without a text header', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(_screen(topOverlayHeight: 52));
+    expect(find.text('Kamera Latihan'), findsNothing);
+    expect(find.text('Tangan boleh di mana saja dalam frame'), findsNothing);
     expect(
       find.byKey(const ValueKey('camera-detection-frame')),
       findsOneWidget,
     );
-    expect(find.text('Tangan boleh di mana saja dalam frame'), findsNothing);
+    expect(find.byKey(const ValueKey('camera-controls')), findsOneWidget);
+    expect(find.byKey(const ValueKey('camera-model-selector')), findsOneWidget);
+    expect(find.byKey(const ValueKey('camera-live-results')), findsNothing);
+    final modelCard = tester.getRect(
+      find.byKey(const ValueKey('camera-model-selector')),
+    );
+    final cameraToggle = tester.getRect(
+      find.byKey(const ValueKey('camera-switch-button')),
+    );
+    final frame = tester.getRect(
+      find.byKey(const ValueKey('camera-detection-frame')),
+    );
+    final action = tester.getRect(
+      find.byKey(const ValueKey('camera-primary-action')),
+    );
+    expect(frame.height, greaterThan(200));
+    expect(cameraToggle.center.dy, closeTo(modelCard.center.dy, 1));
+    expect(modelCard.left, lessThan(cameraToggle.left));
+    expect(frame.top, greaterThan(modelCard.bottom));
+    expect(frame.bottom, lessThan(action.top));
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('camera UI follows the dark theme', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: const Scaffold(body: CameraScreen(cameraEnabled: false)),
+      ),
+    );
+    final cameraSurface = tester.widget<ColoredBox>(
+      find.byKey(const PageStorageKey('camera')),
+    );
+    expect(cameraSurface.color, const Color(0xFF090D16));
+    expect(find.text('LatihIsyarat Model C'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('camera UI keeps the existing light theme', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.light(),
+        home: const Scaffold(body: CameraScreen(cameraEnabled: false)),
+      ),
+    );
+    final cameraSurface = tester.widget<ColoredBox>(
+      find.byKey(const PageStorageKey('camera')),
+    );
+    expect(cameraSurface.color, const Color(0xFFF4F7FC));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('model picker is interactive in video and photo modes', (
+    tester,
+  ) async {
+    Future<void> openAndConfirmModel() async {
+      await tester.tap(find.byKey(const ValueKey('camera-model-selector')));
+      await tester.pumpAndSettle();
+      expect(find.text('Pilih Model AI'), findsOneWidget);
+      expect(find.text('Model C'), findsWidgets);
+      expect(find.text('Model E'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('camera-model-option-model_e')),
+      );
+      await tester.tap(find.byKey(const ValueKey('camera-model-confirm')));
+      await tester.pumpAndSettle();
+      expect(find.text('Pilih Model AI'), findsNothing);
+      expect(find.text('LatihIsyarat Model E'), findsOneWidget);
+    }
+
+    await tester.pumpWidget(_screen());
+    await openAndConfirmModel();
+
+    await tester.pumpWidget(_screen(photoMode: true));
+    await tester.pumpAndSettle();
+    await openAndConfirmModel();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('selected model is shared by camera and upload modes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: DetectionPage(cameraEnabled: false)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Upload'));
+    await tester.pumpAndSettle();
+
+    final modelDropdown = find.byKey(const ValueKey('upload-model-dropdown'));
+    expect(
+      tester.widget<DropdownButton<SignModel>>(modelDropdown).value,
+      SignModel.modelC,
+    );
+    await tester.tap(modelDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Model E').last);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<DropdownButton<SignModel>>(modelDropdown).value,
+      SignModel.modelE,
+    );
+
+    await tester.tap(find.text('Video'));
+    await tester.pumpAndSettle();
+    expect(find.text('LatihIsyarat Model E'), findsOneWidget);
+
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
   });
@@ -190,7 +369,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('MODE UJI: HURUF C').last);
     await tester.pumpAndSettle();
-    expect(find.text('Reset hasil uji C'), findsOneWidget);
+    expect(find.text('Selesai Latihan Huruf'), findsOneWidget);
+    expect(find.byKey(const ValueKey('camera-controls')), findsNothing);
+    expect(find.byKey(const ValueKey('camera-model-selector')), findsNothing);
+    expect(find.byKey(const ValueKey('camera-live-results')), findsOneWidget);
     expect(find.text('Mulai latihan bebas'), findsNothing);
     expect(find.textContaining('video tidak direkam'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -374,12 +556,10 @@ void main() {
           ),
         ),
       );
-      final title = find.text(photoMode ? 'Foto Isyarat' : 'Kamera Latihan');
+      final toggle = find.byKey(const ValueKey('camera-switch-button'));
       expect(
-        tester.getTopLeft(title).dy,
-        greaterThanOrEqualTo(
-          24 + detectionOverlayGap + detectionOverlayHeight,
-        ),
+        tester.getTopLeft(toggle).dy,
+        greaterThanOrEqualTo(24 + detectionOverlayGap + detectionOverlayHeight),
       );
     }
     await tester.pumpWidget(const SizedBox());
@@ -420,7 +600,7 @@ void main() {
         'dispose-complete-1',
         'create-2',
       ]);
-      expect(find.text('Foto Isyarat'), findsOneWidget);
+      expect(find.text('Foto Isyarat'), findsNothing);
       expect(find.text('Ambil foto'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -465,7 +645,7 @@ void main() {
         'dispose-complete-1',
         'create-2',
       ]);
-      expect(find.text('Kamera Latihan'), findsOneWidget);
+      expect(find.text('Kamera Latihan'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump();

@@ -10,29 +10,69 @@ import '../models/sign_prediction.dart';
 import 'image_preprocessor.dart';
 import 'still_image_hand_detector.dart';
 
+enum SignModel {
+  modelC(
+    id: 'camera_robust_v1',
+    name: 'Model C',
+    assetPath: 'assets/models/model_float16.tflite',
+    inputSize: 28,
+    inputChannels: 1,
+  ),
+  modelE(
+    id: 'model_e',
+    name: 'Model E',
+    assetPath: 'assets/models/e/model_e_float16.tflite',
+    inputSize: 96,
+    inputChannels: 3,
+  );
+
+  const SignModel({
+    required this.id,
+    required this.name,
+    required this.assetPath,
+    required this.inputSize,
+    required this.inputChannels,
+  });
+
+  final String id;
+  final String name;
+  final String assetPath;
+  final int inputSize;
+  final int inputChannels;
+}
+
+class _LoadedSignModel {
+  const _LoadedSignModel({
+    required this.interpreter,
+    required this.isolateInterpreter,
+  });
+
+  final Interpreter interpreter;
+  final IsolateInterpreter isolateInterpreter;
+}
+
 class SignClassifier {
   SignClassifier._();
 
   static final SignClassifier instance = SignClassifier._();
 
-  static const _modelPath = 'assets/models/model_float16.tflite';
   static const _labelsPath = 'assets/models/labels.json';
   static const _landmarkReferencesPath =
       'assets/models/landmark_references.json';
 
-  Interpreter? _interpreter;
-  IsolateInterpreter? _isolateInterpreter;
+  final Map<SignModel, _LoadedSignModel> _loadedModels = {};
+  final Map<SignModel, Future<void>> _initializations = {};
   List<String> _labels = const [];
   Map<String, List<Offset>> _landmarkReferences = const {};
-  Future<void>? _initialization;
   img.Image? _lastContextInput;
   img.Image? _lastTightInput;
   SignPrediction? _lastContextPrediction;
   SignPrediction? _lastTightPrediction;
   SignPrediction? _lastLandmarkPrediction;
 
-  bool get isReady =>
-      _interpreter != null && _isolateInterpreter != null && _labels.isNotEmpty;
+  bool get isReady => isReadyFor(SignModel.modelC);
+  bool isReadyFor(SignModel model) =>
+      _loadedModels.containsKey(model) && _labels.isNotEmpty;
   List<String> get labels => List.unmodifiable(_labels);
   List<int>? get lastContextInputPng =>
       _lastContextInput == null ? null : img.encodePng(_lastContextInput!);
@@ -42,85 +82,133 @@ class SignClassifier {
   SignPrediction? get lastTightPrediction => _lastTightPrediction;
   SignPrediction? get lastLandmarkPrediction => _lastLandmarkPrediction;
 
-  Future<void> initialize() => _initialization ??= _load();
-
-  Future<void> _load() async {
-    final labelsJson = jsonDecode(await rootBundle.loadString(_labelsPath));
-    _labels = List<String>.from(labelsJson['labels'] as List<dynamic>);
-    final referencesJson = jsonDecode(
-      await rootBundle.loadString(_landmarkReferencesPath),
-    ) as Map<String, dynamic>;
-    final references = referencesJson['labels'] as Map<String, dynamic>;
-    _landmarkReferences = Map<String, List<Offset>>.unmodifiable(
-      references.map(
-        (label, value) => MapEntry(
-          label,
-          (value as List<dynamic>)
-              .map((point) {
-                final coordinates = point as List<dynamic>;
-                return Offset(
-                  (coordinates[0] as num).toDouble(),
-                  (coordinates[1] as num).toDouble(),
-                );
-              })
-              .toList(growable: false),
-        ),
-      ),
-    );
-
-    final options = InterpreterOptions()..threads = 4;
-    _interpreter = await Interpreter.fromAsset(_modelPath, options: options);
-
-    final inputShape = _interpreter!.getInputTensor(0).shape;
-    final outputShape = _interpreter!.getOutputTensor(0).shape;
-    if (!_sameShape(inputShape, const [1, 28, 28, 1]) ||
-        !_sameShape(outputShape, <int>[1, _labels.length])) {
-      _interpreter!.close();
-      _interpreter = null;
-      throw StateError(
-        'Kontrak model tidak sesuai: input $inputShape, output $outputShape.',
-      );
-    }
-    _isolateInterpreter = await IsolateInterpreter.create(
-      address: _interpreter!.address,
-      debugName: 'LatihIsyaratClassifier',
-    );
+  Future<void> initialize({SignModel model = SignModel.modelC}) {
+    if (isReadyFor(model)) return Future<void>.value();
+    return _initializations.putIfAbsent(model, () {
+      return _load(model).catchError((Object error, StackTrace stackTrace) {
+        _initializations.remove(model);
+        Error.throwWithStackTrace(error, stackTrace);
+      });
+    });
   }
 
-  Future<SignPrediction> classifyFile(String path) async {
+  Future<void> _load(SignModel model) async {
+    if (_labels.isEmpty) {
+      final labelsJson = jsonDecode(await rootBundle.loadString(_labelsPath));
+      _labels = List<String>.from(labelsJson['labels'] as List<dynamic>);
+      final referencesJson = jsonDecode(
+        await rootBundle.loadString(_landmarkReferencesPath),
+      ) as Map<String, dynamic>;
+      final references = referencesJson['labels'] as Map<String, dynamic>;
+      _landmarkReferences = Map<String, List<Offset>>.unmodifiable(
+        references.map(
+          (label, value) => MapEntry(
+            label,
+            (value as List<dynamic>)
+                .map((point) {
+                  final coordinates = point as List<dynamic>;
+                  return Offset(
+                    (coordinates[0] as num).toDouble(),
+                    (coordinates[1] as num).toDouble(),
+                  );
+                })
+                .toList(growable: false),
+          ),
+        ),
+      );
+    }
+    final options = InterpreterOptions()..threads = 4;
+    final interpreter = await Interpreter.fromAsset(
+      model.assetPath,
+      options: options,
+    );
+    final inputShape = interpreter.getInputTensor(0).shape;
+    final outputShape = interpreter.getOutputTensor(0).shape;
+    if (!_sameShape(inputShape, <int>[
+          1,
+          model.inputSize,
+          model.inputSize,
+          model.inputChannels,
+        ]) ||
+        !_sameShape(outputShape, <int>[1, _labels.length])) {
+      interpreter.close();
+      throw StateError(
+        'Kontrak ${model.name} tidak sesuai: input $inputShape, '
+        'output $outputShape.',
+      );
+    }
+    try {
+      final isolateInterpreter = await IsolateInterpreter.create(
+        address: interpreter.address,
+        debugName: 'LatihIsyarat-${model.id}',
+      );
+      _loadedModels[model] = _LoadedSignModel(
+        interpreter: interpreter,
+        isolateInterpreter: isolateInterpreter,
+      );
+    } catch (_) {
+      interpreter.close();
+      rethrow;
+    }
+  }
+
+  Future<SignPrediction> classifyFile(
+    String path, {
+    SignModel model = SignModel.modelC,
+  }) async {
     const detector = StillImageHandDetector();
     final image = await detector.loadImage(path);
     final landmarks = await detector.detect(image);
-    if (!isReady) await initialize();
+    if (!isReadyFor(model)) await initialize(model: model);
     return _classifyHandCrops(
-      ImagePreprocessor.imageToGrayHandCrops(
-        image,
-        normalizedLandmarks: landmarks,
-      ),
+      model == SignModel.modelC
+          ? ImagePreprocessor.imageToGrayHandCrops(
+              image,
+              normalizedLandmarks: landmarks,
+            )
+          : ImagePreprocessor.imageToRgbHandCrops(
+              image,
+              normalizedLandmarks: landmarks,
+            ),
+      model,
     );
   }
 
-  Future<SignPrediction> classifyUploadFile(String path) => classifyFile(path);
+  Future<SignPrediction> classifyUploadFile(
+    String path, {
+    SignModel model = SignModel.modelC,
+  }) => classifyFile(path, model: model);
 
   Future<SignPrediction> classifyCameraFrame(
     CameraImage cameraImage, {
     required int rotationDegrees,
     required bool mirrorHorizontally,
     required List<Offset> normalizedLandmarks,
+    SignModel model = SignModel.modelC,
   }) async {
-    if (!isReady) await initialize();
-    final crops = ImagePreprocessor.cameraImageToGrayCrops(
-      cameraImage,
-      rotationDegrees: rotationDegrees,
-      mirrorHorizontally: mirrorHorizontally,
-      normalizedLandmarks: normalizedLandmarks,
-    );
-    return _classifyHandCrops(crops);
+    if (!isReadyFor(model)) await initialize(model: model);
+    final crops = model == SignModel.modelC
+        ? ImagePreprocessor.cameraImageToGrayCrops(
+            cameraImage,
+            rotationDegrees: rotationDegrees,
+            mirrorHorizontally: mirrorHorizontally,
+            normalizedLandmarks: normalizedLandmarks,
+          )
+        : ImagePreprocessor.cameraImageToRgbCrops(
+            cameraImage,
+            rotationDegrees: rotationDegrees,
+            mirrorHorizontally: mirrorHorizontally,
+            normalizedLandmarks: normalizedLandmarks,
+          );
+    return _classifyHandCrops(crops, model);
   }
 
-  Future<SignPrediction> _classifyHandCrops(CameraFrameCrops crops) async {
-    final contextInput = ImagePreprocessor.toModelImage(crops.context);
-    final contextPrediction = await _classifyModelImage(contextInput);
+  Future<SignPrediction> _classifyHandCrops(
+    CameraFrameCrops crops,
+    SignModel model,
+  ) async {
+    final contextInput = _toModelImage(crops.context, model);
+    final contextPrediction = await _classifyModelImage(contextInput, model);
     final landmarkPrediction = _classifyLandmarks(crops.orientedLandmarks);
     _lastContextInput = contextInput;
     _lastTightInput = null;
@@ -131,9 +219,8 @@ class SignClassifier {
     // immediately and keep inference responsive on older phones.
     if (contextPrediction.confidence >= 0.90) return contextPrediction;
 
-    final tightPrediction = await _classifyModelImage(
-      _lastTightInput = ImagePreprocessor.toModelImage(crops.tight),
-    );
+    final tightInput = _lastTightInput = _toModelImage(crops.tight, model);
+    final tightPrediction = await _classifyModelImage(tightInput, model);
     _lastTightPrediction = tightPrediction;
     final blended = _blendImagePredictions(contextPrediction, tightPrediction);
     if (tightPrediction.label == contextPrediction.label) return blended;
@@ -148,29 +235,45 @@ class SignClassifier {
     img.Image image, {
     double cropFraction = 1,
     Rect? normalizedCrop,
+    SignModel model = SignModel.modelC,
   }) {
-    final interpreter = _interpreter;
-    if (interpreter == null) {
+    if (!isReadyFor(model)) {
       throw StateError('Model belum siap.');
     }
 
-    final modelImage = ImagePreprocessor.toModelImage(
-      image,
-      cropFraction: cropFraction,
-      normalizedCrop: normalizedCrop,
-    );
-    return _classifyModelImage(modelImage);
+    final modelImage = model == SignModel.modelC
+        ? ImagePreprocessor.toModelImage(
+            image,
+            cropFraction: cropFraction,
+            normalizedCrop: normalizedCrop,
+          )
+        : ImagePreprocessor.toModelRgbImage(
+            image,
+            cropFraction: cropFraction,
+            normalizedCrop: normalizedCrop,
+          );
+    return _classifyModelImage(modelImage, model);
   }
 
-  Future<SignPrediction> _classifyModelImage(img.Image modelImage) async {
-    final isolateInterpreter = _isolateInterpreter;
-    if (isolateInterpreter == null) {
+  img.Image _toModelImage(img.Image image, SignModel model) =>
+      model == SignModel.modelC
+      ? ImagePreprocessor.toModelImage(image)
+      : ImagePreprocessor.toModelRgbImage(image);
+
+  Future<SignPrediction> _classifyModelImage(
+    img.Image modelImage,
+    SignModel model,
+  ) async {
+    final loadedModel = _loadedModels[model];
+    if (loadedModel == null) {
       throw StateError('Model belum siap.');
     }
 
-    final input = ImagePreprocessor.modelImageToInput(modelImage);
+    final input = model == SignModel.modelC
+        ? ImagePreprocessor.modelImageToInput(modelImage)
+        : ImagePreprocessor.rgbImageToInput(modelImage);
     final output = <List<double>>[List<double>.filled(_labels.length, 0)];
-    await isolateInterpreter.run(input, output);
+    await loadedModel.isolateInterpreter.run(input, output);
     return _predictionFromScores(List<double>.from(output.first));
   }
 
@@ -274,11 +377,12 @@ class SignClassifier {
   }
 
   Future<void> close() async {
-    await _isolateInterpreter?.close();
-    _isolateInterpreter = null;
-    _interpreter?.close();
-    _interpreter = null;
-    _initialization = null;
+    for (final model in _loadedModels.values) {
+      await model.isolateInterpreter.close();
+      model.interpreter.close();
+    }
+    _loadedModels.clear();
+    _initializations.clear();
     _lastContextInput = null;
     _lastTightInput = null;
     _lastContextPrediction = null;

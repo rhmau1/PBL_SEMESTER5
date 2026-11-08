@@ -7,6 +7,7 @@ void main() {
       gesture: 'SAYA BELAJAR',
       confidence: 0.9235,
       source: 'video',
+      modelId: 'model_e',
       videoPath: '/recordings/session.mp4',
     ).copyWith(id: 17);
     final restored = HistoryItem.fromMap(item.toMap());
@@ -15,6 +16,7 @@ void main() {
     expect(restored.confidence, 0.9235);
     expect(restored.confidenceLabel, '92.3%');
     expect(restored.sourceLabel, 'Latihan bebas');
+    expect(restored.modelLabel, 'Model E (MobileNet V2)');
     expect(restored.videoPath, '/recordings/session.mp4');
     expect(restored.date, matches(RegExp(r'^\d{4}-\d{2}-\d{2}$')));
     expect(restored.time, matches(RegExp(r'^\d{2}:\d{2}:\d{2}$')));
@@ -34,6 +36,7 @@ void main() {
     expect(item.source, 'unknown');
     expect(item.imagePath, isNull);
     expect(item.videoPath, isNull);
+    expect(item.modelLabel, 'Model C');
   });
 
   test('photo metadata survives the id assigned by SQLite', () {
@@ -41,12 +44,14 @@ void main() {
       gesture: 'A',
       confidence: 1,
       source: 'photo',
+      modelId: 'camera_robust_v1',
       imagePath: '/photos/a.jpg',
     ).copyWith(id: 1);
     final saved = HistoryItem.fromMap(item.toMap());
     expect(saved.imagePath, '/photos/a.jpg');
     expect(saved.confidenceLabel, '100.0%');
     expect(saved.sourceLabel, 'Foto kamera');
+    expect(saved.modelLabel, 'Model C');
   });
 
   test('invalid scores cannot become misleading percentages', () {
@@ -56,6 +61,7 @@ void main() {
           gesture: 'B',
           confidence: score,
           source: 'target',
+          modelId: 'camera_robust_v1',
         ),
         throwsArgumentError,
       );

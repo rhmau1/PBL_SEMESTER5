@@ -395,6 +395,17 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     const SizedBox(height: 14),
                     const Divider(height: 1, color: Color(0xFFE9EEF6)),
                     const SizedBox(height: 13),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _DetailInfo(
+                        label: 'Model Deteksi',
+                        value: item.modelLabel,
+                        icon: Icons.memory_rounded,
+                      ),
+                    ),
+                    const SizedBox(height: 13),
+                    const Divider(height: 1, color: Color(0xFFE9EEF6)),
+                    const SizedBox(height: 13),
                     Row(
                       children: [
                         Expanded(
@@ -710,6 +721,18 @@ class _HistoryItemTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: muted, fontSize: 12),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        item.modelLabel,
+                        key: const ValueKey('history-model-label'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: blue,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       const SizedBox(height: 3),
                       Text(

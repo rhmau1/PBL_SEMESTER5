@@ -13,6 +13,8 @@ class UploadScreen extends StatefulWidget {
     super.key,
     this.onResultSaved,
     this.onBusyChanged,
+    this.selectedModel = SignModel.modelC,
+    this.onModelChanged,
     this.pickFiles,
     this.classifyFile,
     this.saveImage,
@@ -20,6 +22,8 @@ class UploadScreen extends StatefulWidget {
 
   final Future<void> Function(HistoryItem)? onResultSaved;
   final ValueChanged<bool>? onBusyChanged;
+  final SignModel selectedModel;
+  final ValueChanged<SignModel>? onModelChanged;
   final Future<List<XFile>> Function(bool multiple)? pickFiles;
   final Future<SignPrediction> Function(String path)? classifyFile;
   final Future<String> Function(XFile file)? saveImage;
@@ -85,7 +89,10 @@ class _UploadScreenState extends State<UploadScreen> {
         try {
           prediction =
               await (widget.classifyFile ??
-                  SignClassifier.instance.classifyUploadFile)(path);
+                  (path) => SignClassifier.instance.classifyUploadFile(
+                    path,
+                    model: widget.selectedModel,
+                  ))(path);
         } catch (failure) {
           error = '$failure';
         }
@@ -101,6 +108,7 @@ class _UploadScreenState extends State<UploadScreen> {
                 gesture: prediction.label,
                 confidence: prediction.confidence,
                 source: 'upload',
+                modelId: widget.selectedModel.id,
                 imagePath: path,
               ),
             );
@@ -179,6 +187,54 @@ class _UploadScreenState extends State<UploadScreen> {
                   style: TextStyle(color: Color(0xFF52627D), height: 1.5),
                 ),
                 const SizedBox(height: 18),
+                Container(
+                  key: const ValueKey('upload-model-selector'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xFFDCE4F1)),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.memory_rounded, color: blue),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Model AI',
+                          style: TextStyle(
+                            color: ink,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      DropdownButton<SignModel>(
+                        key: const ValueKey('upload-model-dropdown'),
+                        value: widget.selectedModel,
+                        underline: const SizedBox.shrink(),
+                        items: SignModel.values
+                            .map(
+                              (model) => DropdownMenuItem(
+                                value: model,
+                                child: Text(model.name),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: _isProcessing
+                            ? null
+                            : (model) {
+                                if (model != null) {
+                                  widget.onModelChanged?.call(model);
+                                }
+                              },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
