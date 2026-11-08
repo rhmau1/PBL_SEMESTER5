@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../screens/sign_guide_screen.dart';
-
+import 'guide_page.dart';
 class DictionaryPage extends StatelessWidget {
   const DictionaryPage({super.key});
 
@@ -20,6 +20,22 @@ class DictionaryPage extends StatelessWidget {
             fontSize: 20,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Panduan Penggunaan',
+            icon: const Icon(
+              Icons.help_outline_rounded,
+              color: Color(0xFF2864F0),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const GuidePage()),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: const SafeArea(child: SignGuideScreen()),
     );

@@ -57,4 +57,6 @@ dependencies {
     implementation("androidx.camera:camera-core:1.6.1")
     implementation("com.google.mediapipe:tasks-vision:1.0.0")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
+    // MediaPipe Tasks Vision for StillImageHandLandmarker
+    implementation("com.google.mediapipe:tasks-vision:1.0.0")
 }
