@@ -18,6 +18,10 @@ Project Flutter berada langsung di `~/Documents/rhma2026/PBL_SEMESTER5`;
 | Kamus | Foto tangan 24 huruf statis dan petunjuk; J/Z dijelaskan sebagai gerakan |
 | Riwayat | Hasil lokal beserta waktu, sumber, dan keyakinan model; detail serta hapus riwayat |
 
+Pada pembukaan pertama setelah instalasi, splash hanya menampilkan logo Signy,
+lalu dilanjutkan pengenalan interaktif empat slide. Pengguna dapat menggeser,
+menekan **Lanjut**, atau melewatinya; status pengenalan disimpan di perangkat.
+
 Kamera depan menjadi pilihan awal dan dapat diganti ke kamera belakang.
 Pada latihan bebas, huruf yang diterima ditampilkan setelah **Akhiri** pada
 bottom sheet selebar layar dengan tinggi tetap 50% layar (maksimum 85%; isi

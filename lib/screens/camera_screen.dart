@@ -244,10 +244,14 @@ class _CameraScreenState extends State<CameraScreen>
         _setCameraError(_friendlyCameraError(error));
       }
     } catch (error) {
-      if (_isCurrentCameraRequest(generation)) _setCameraError('$error');
+      if (_isCurrentCameraRequest(generation)) {
+        _setCameraError('$error');
+      }
     } finally {
       if (_isCurrentCameraRequest(generation)) {
-        setState(() => _isInitializing = false);
+        setState(() {
+          _isInitializing = false;
+        });
       }
     }
   }
@@ -375,7 +379,11 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       await _openCamera(_cameras[_cameraIndex], generation);
     } catch (error) {
-      if (_isCurrentCameraRequest(generation)) _setCameraError('$error');
+      if (_isCurrentCameraRequest(generation)) {
+        _setCameraError(
+          error is CameraException ? _friendlyCameraError(error) : '$error',
+        );
+      }
     } finally {
       if (_isCurrentCameraRequest(generation)) {
         setState(() => _isInitializing = false);
@@ -424,7 +432,7 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (error) {
       if (mounted) {
         setState(() => _isSessionActive = false);
-        _showMessage('Tidak dapat memulai kamera: $error');
+        _handleCameraOperationError(error, 'Tidak dapat memulai kamera');
       }
     } finally {
       _isStartingSession = false;
@@ -464,6 +472,10 @@ class _CameraScreenState extends State<CameraScreen>
       _selectedTarget = target;
       _resetRecognitionState(clearTargetResults: true);
     });
+    if (_controller == null && _cameraError != null) {
+      await _initializeCameras();
+      return;
+    }
     if (!streamAlreadyActive) {
       await _startTargetAnalysis(resetResults: false);
     }
@@ -513,7 +525,10 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (error) {
       if (mounted) {
         setState(() => _isTargetAnalysisActive = false);
-        _showMessage('Deteksi otomatis tidak dapat dimulai: $error');
+        _handleCameraOperationError(
+          error,
+          'Deteksi otomatis tidak dapat dimulai',
+        );
       }
     } finally {
       if (mounted) {
@@ -866,7 +881,7 @@ class _CameraScreenState extends State<CameraScreen>
         _photoHistorySaved = false;
       });
     } catch (error) {
-      _showMessage('Foto gagal diambil: $error');
+      _handleCameraOperationError(error, 'Foto gagal diambil');
     } finally {
       _isTakingPhoto = false;
       if (mounted) setState(() {});
@@ -913,7 +928,7 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
     } catch (error) {
-      _showMessage('Foto gagal diproses atau disimpan: $error');
+      _handleCameraOperationError(error, 'Foto gagal diproses atau disimpan');
     } finally {
       _isClassifyingPhoto = false;
       _isSavingPhotoHistory = false;
@@ -1190,6 +1205,16 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _cameraError = message);
   }
 
+  void _handleCameraOperationError(Object error, String message) {
+    if (error is CameraException &&
+        (error.code.startsWith('CameraAccessDenied') ||
+            error.code == 'CameraAccessRestricted')) {
+      _setCameraError(_friendlyCameraError(error));
+      return;
+    }
+    _showMessage('$message: $error');
+  }
+
   void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -1200,9 +1225,9 @@ class _CameraScreenState extends State<CameraScreen>
   String _friendlyCameraError(CameraException error) {
     return switch (error.code) {
       'CameraAccessDenied' =>
-        'Izin kamera ditolak. Aktifkan izin dari pengaturan.',
-      'CameraAccessDeniedWithoutPrompt' =>
-        'Izin kamera diblokir. Aktifkan izin dari pengaturan.',
+        'Izin kamera ditolak. Tekan tombol di bawah untuk meminta izin lagi.',
+      'CameraAccessDeniedWithoutPrompt' => 'Izin kamera sebelumnya ditolak. Izinkan kamera dari Pengaturan aplikasi, lalu tekan Coba lagi.',
+      'CameraAccessRestricted' => 'Akses kamera dibatasi oleh perangkat dan tidak dapat diminta dari aplikasi.',
       _ => 'Kamera gagal dibuka: ${error.description ?? error.code}',
     };
   }
@@ -1400,17 +1425,27 @@ class _CameraScreenState extends State<CameraScreen>
                             ),
                           ),
                           onPressed:
-                              (_controller?.value.isInitialized ?? false) &&
-                                  !_isTargetAnalysisStarting &&
+                              !_isTargetAnalysisStarting &&
                                   !_isStartingSession &&
                                   !_isEndingSession
-                              ? _startSession
+                              ? _cameraError != null
+                                    ? _initializeCameras
+                                    : (_controller?.value.isInitialized ??
+                                          false)
+                                    ? _startSession
+                                    : null
                               : null,
-                          icon: const Icon(Icons.play_circle_fill_rounded),
+                          icon: Icon(
+                            _cameraError == null
+                                ? Icons.play_circle_fill_rounded
+                                : Icons.lock_open_rounded,
+                          ),
                           label: Text(
                             _isStartingSession
                                 ? 'Menyiapkan deteksi...'
-                                : 'Mulai Latihan Bebas',
+                                : _cameraError == null
+                                ? 'Mulai Latihan Bebas'
+                                : 'Minta Izin Kamera Lagi',
                           ),
                         ),
                 ),
@@ -1568,9 +1603,12 @@ class _CameraScreenState extends State<CameraScreen>
                     width: double.infinity,
                     height: 58,
                     child: FilledButton.icon(
-                      onPressed:
-                          !busy && (_controller?.value.isInitialized ?? false)
-                          ? _takePhoto
+                      onPressed: !busy
+                          ? _cameraError != null
+                                ? _initializeCameras
+                                : (_controller?.value.isInitialized ?? false)
+                                ? _takePhoto
+                                : null
                           : null,
                       style: FilledButton.styleFrom(
                         backgroundColor: colors.primary,
@@ -1581,7 +1619,11 @@ class _CameraScreenState extends State<CameraScreen>
                       ),
                       icon: const Icon(Icons.camera_alt_rounded),
                       label: Text(
-                        _isTakingPhoto ? 'Mengambil foto...' : 'Ambil foto',
+                        _isTakingPhoto
+                            ? 'Mengambil foto...'
+                            : _cameraError != null
+                            ? 'Minta Izin Kamera Lagi'
+                            : 'Ambil foto',
                       ),
                     ),
                   )

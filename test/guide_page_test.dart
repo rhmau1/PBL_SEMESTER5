@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_language/main.dart';
 import 'package:sign_language/pages/dictionary_page.dart';
 import 'package:sign_language/pages/guide_page.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({'onboarding_completed': true});
+  });
+
   Widget createHost(Widget child) {
     return MaterialApp(
       home: child,
@@ -202,6 +207,7 @@ void main() {
       await tester.pumpWidget(
         const ProviderScope(child: MyApp(cameraEnabled: false)),
       );
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       // Drag down on home list to see Panduan action card
@@ -232,6 +238,7 @@ void main() {
       await tester.pumpWidget(
         const ProviderScope(child: MyApp(cameraEnabled: false)),
       );
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       final headerHelp = find.byTooltip('Panduan Penggunaan');

@@ -37,6 +37,8 @@ class _CameraBackend extends CameraPlatform {
   DeviceOrientation? lockedOrientation;
   String? picturePath;
   int picturesTaken = 0;
+  int deniedInitializations = 0;
+  int permissionRequestAttempts = 0;
 
   @override
   Future<List<CameraDescription>> availableCameras() async =>
@@ -48,6 +50,14 @@ class _CameraBackend extends CameraPlatform {
     ResolutionPreset? resolutionPreset, {
     bool enableAudio = false,
   }) async {
+    permissionRequestAttempts++;
+    if (deniedInitializations > 0) {
+      deniedInitializations--;
+      throw PlatformException(
+        code: 'CameraAccessDenied',
+        message: 'Camera access permission was denied.',
+      );
+    }
     opened.add(cameraDescription);
     lifecycle.add('create-${opened.length}');
     return opened.length;
@@ -294,6 +304,52 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
   });
+
+  for (final photoMode in [false, true]) {
+    testWidgets(
+      '${photoMode ? 'Foto' : 'Video'} can request camera permission after repeated denial',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        backend.deniedInitializations = 2;
+
+        await tester.pumpWidget(_screen(photoMode: photoMode, enabled: true));
+        await tester.pumpAndSettle();
+        expect(backend.permissionRequestAttempts, 1);
+        expect(find.text('Minta Izin Kamera Lagi'), findsOneWidget);
+
+        final primaryAction = find.byKey(
+          ValueKey(
+            photoMode ? 'photo-primary-action' : 'camera-primary-action',
+          ),
+        );
+        await tester.tap(
+          find.descendant(
+            of: primaryAction,
+            matching: find.byType(FilledButton),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(backend.permissionRequestAttempts, 2);
+        expect(find.text('Minta Izin Kamera Lagi'), findsOneWidget);
+
+        await tester.tap(
+          find.descendant(
+            of: primaryAction,
+            matching: find.byType(FilledButton),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(backend.permissionRequestAttempts, 3);
+        expect(find.text('Kamera belum siap.'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+      },
+    );
+  }
 
   testWidgets('model picker is interactive in video and photo modes', (
     tester,

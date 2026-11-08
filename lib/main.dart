@@ -8,8 +8,9 @@ import 'pages/dictionary_page.dart';
 import 'pages/history_page.dart';
 import 'pages/home_page.dart';
 import 'providers/history_provider.dart';
-import 'widgets/app_bottom_nav.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
+import 'widgets/app_bottom_nav.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +26,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const blue = Color(0xFF2864F0);
+    final home = HomeShell(cameraEnabled: cameraEnabled);
     return MaterialApp(
       title: 'LatihIsyarat',
       debugShowCheckedModeBanner: false,
@@ -54,7 +56,10 @@ class MyApp extends StatelessWidget {
         ),
       ),
       themeMode: ThemeMode.system,
-      home: SplashScreen(nextScreen: HomeShell(cameraEnabled: cameraEnabled)),
+      home: SplashScreen(
+        nextScreen: home,
+        firstLaunchScreen: OnboardingScreen(nextScreen: home),
+      ),
     );
   }
 }
