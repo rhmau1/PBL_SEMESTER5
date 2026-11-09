@@ -144,9 +144,19 @@ class _UploadScreenState extends State<UploadScreen> {
     const ink = Color(0xFF172642);
     const muted = Color(0xFF7585A2);
     const blue = Color(0xFF2864F0);
-    return CustomScrollView(
-      key: const PageStorageKey('upload'),
-      slivers: [
+    final lightTheme = ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: blue),
+      scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+      fontFamily: 'Roboto',
+      useMaterial3: true,
+    );
+    return Theme(
+      data: lightTheme,
+      child: ColoredBox(
+        color: const Color(0xFFF5F5F5),
+        child: CustomScrollView(
+          key: const PageStorageKey('upload'),
+          slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
           sliver: SliverToBoxAdapter(
@@ -375,6 +385,8 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
           ),
       ],
+    ),
+      ),
     );
   }
 }

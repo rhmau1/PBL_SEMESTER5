@@ -101,23 +101,35 @@ class _DetectionPageState extends State<DetectionPage> {
     );
 
     if (!isCamera) {
-      return SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: selector,
+      final lightTheme = ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2864F0)),
+        scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+        fontFamily: 'Roboto',
+        useMaterial3: true,
+      );
+      return Theme(
+        data: lightTheme,
+        child: ColoredBox(
+          color: const Color(0xFFF5F5F5),
+          child: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: selector,
+                ),
+                Expanded(
+                  child: UploadScreen(
+                    onResultSaved: widget.onResultSaved,
+                    onBusyChanged: _setBusy,
+                    selectedModel: _selectedModel,
+                    onModelChanged: (model) =>
+                        setState(() => _selectedModel = model),
+                  ),
+                ),
+              ],
             ),
-            Expanded(
-              child: UploadScreen(
-                onResultSaved: widget.onResultSaved,
-                onBusyChanged: _setBusy,
-                selectedModel: _selectedModel,
-                onModelChanged: (model) =>
-                    setState(() => _selectedModel = model),
-              ),
-            ),
-          ],
+          ),
         ),
       );
     }
