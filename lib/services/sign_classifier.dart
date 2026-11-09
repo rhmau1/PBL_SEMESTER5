@@ -9,6 +9,7 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 import '../models/sign_prediction.dart';
 import 'image_preprocessor.dart';
 import 'still_image_hand_detector.dart';
+import 'static_image_prediction_policy.dart';
 
 class SignClassifier {
   SignClassifier._();
@@ -17,6 +18,12 @@ class SignClassifier {
 
   static const _modelPath = 'assets/models/model_float16.tflite';
   static const _labelsPath = 'assets/models/labels.json';
+  // Experimental: reduces wrong accepts in the real-photo audit but rejects
+  // many valid standardized inputs. Keep the established orientation default.
+  static const _useOrientationEnsemble = bool.fromEnvironment(
+    'STATIC_ORIENTATION_ENSEMBLE',
+    defaultValue: false,
+  );
   static const _landmarkReferencesPath =
       'assets/models/landmark_references.json';
 
@@ -29,7 +36,10 @@ class SignClassifier {
   img.Image? _lastTightInput;
   SignPrediction? _lastContextPrediction;
   SignPrediction? _lastTightPrediction;
+  SignPrediction? _lastMirroredContextPrediction;
+  SignPrediction? _lastMirroredTightPrediction;
   SignPrediction? _lastLandmarkPrediction;
+  List<Offset> _lastInputLandmarks = const [];
 
   bool get isReady =>
       _interpreter != null && _isolateInterpreter != null && _labels.isNotEmpty;
@@ -40,7 +50,13 @@ class SignClassifier {
       _lastTightInput == null ? null : img.encodePng(_lastTightInput!);
   SignPrediction? get lastContextPrediction => _lastContextPrediction;
   SignPrediction? get lastTightPrediction => _lastTightPrediction;
+  SignPrediction? get lastMirroredContextPrediction =>
+      _lastMirroredContextPrediction;
+  SignPrediction? get lastMirroredTightPrediction =>
+      _lastMirroredTightPrediction;
   SignPrediction? get lastLandmarkPrediction => _lastLandmarkPrediction;
+  List<Offset> get lastInputLandmarks => _lastInputLandmarks;
+  bool get usesOrientationEnsemble => _useOrientationEnsemble;
 
   Future<void> initialize() => _initialization ??= _load();
 
@@ -126,22 +142,41 @@ class SignClassifier {
     _lastTightInput = null;
     _lastContextPrediction = contextPrediction;
     _lastTightPrediction = null;
+    _lastMirroredContextPrediction = null;
+    _lastMirroredTightPrediction = null;
     _lastLandmarkPrediction = landmarkPrediction;
-    // The context crop is adaptive now, so a very strong result can return
-    // immediately and keep inference responsive on older phones.
-    if (contextPrediction.confidence >= 0.90) return contextPrediction;
+    _lastInputLandmarks = List<Offset>.unmodifiable(crops.orientedLandmarks);
+    var context = contextPrediction;
+    if (_useOrientationEnsemble) {
+      final mirrored = await _classifyModelImage(
+        img.flipHorizontal(img.Image.from(contextInput)),
+      );
+      _lastMirroredContextPrediction = mirrored;
+      context = StaticImagePredictionPolicy.averageOrientations(
+        _labels,
+        contextPrediction,
+        mirrored,
+      );
+    }
+    if (context.confidence >= 0.90) return context;
 
     final tightPrediction = await _classifyModelImage(
       _lastTightInput = ImagePreprocessor.toModelImage(crops.tight),
     );
     _lastTightPrediction = tightPrediction;
-    final blended = _blendImagePredictions(contextPrediction, tightPrediction);
-    if (tightPrediction.label == contextPrediction.label) return blended;
-
-    // Disagreement between two valid hand crops is uncertainty, even if one
-    // softmax output is overconfident. Keep it below the UI acceptance limit
-    // so an unstable crop is not committed as a letter.
-    return _capPredictionConfidence(blended, 0.59);
+    var tight = tightPrediction;
+    if (_useOrientationEnsemble) {
+      final mirrored = await _classifyModelImage(
+        img.flipHorizontal(img.Image.from(_lastTightInput!)),
+      );
+      _lastMirroredTightPrediction = mirrored;
+      tight = StaticImagePredictionPolicy.averageOrientations(
+        _labels,
+        tightPrediction,
+        mirrored,
+      );
+    }
+    return StaticImagePredictionPolicy.combineCrops(_labels, context, tight);
   }
 
   Future<SignPrediction> classifyImage(
@@ -175,17 +210,7 @@ class SignClassifier {
   }
 
   SignPrediction _predictionFromScores(List<double> scores) {
-    var bestIndex = 0;
-    for (var index = 1; index < scores.length; index++) {
-      if (scores[index] > scores[bestIndex]) {
-        bestIndex = index;
-      }
-    }
-    return SignPrediction(
-      label: _labels[bestIndex],
-      confidence: scores[bestIndex],
-      scores: scores,
-    );
+    return StaticImagePredictionPolicy.fromScores(_labels, scores);
   }
 
   SignPrediction? _classifyLandmarks(List<Offset> landmarks) {
@@ -243,36 +268,6 @@ class SignClassifier {
     return sum / a.length;
   }
 
-  SignPrediction _blendImagePredictions(
-    SignPrediction contextPrediction,
-    SignPrediction tightPrediction,
-  ) {
-    return _predictionFromScores(
-      List<double>.generate(
-        _labels.length,
-        (index) =>
-            contextPrediction.scores[index] * 0.55 +
-            tightPrediction.scores[index] * 0.45,
-        growable: false,
-      ),
-    );
-  }
-
-  SignPrediction _capPredictionConfidence(
-    SignPrediction prediction,
-    double maximumConfidence,
-  ) {
-    if (prediction.confidence <= maximumConfidence) return prediction;
-    final uniform = 1 / _labels.length;
-    final scale =
-        (maximumConfidence - uniform) / (prediction.confidence - uniform);
-    return _predictionFromScores(
-      prediction.scores
-          .map((score) => uniform + (score - uniform) * scale)
-          .toList(growable: false),
-    );
-  }
-
   Future<void> close() async {
     await _isolateInterpreter?.close();
     _isolateInterpreter = null;
@@ -283,7 +278,10 @@ class SignClassifier {
     _lastTightInput = null;
     _lastContextPrediction = null;
     _lastTightPrediction = null;
+    _lastMirroredContextPrediction = null;
+    _lastMirroredTightPrediction = null;
     _lastLandmarkPrediction = null;
+    _lastInputLandmarks = const [];
   }
 
   static bool _sameShape(List<int> actual, List<int> expected) {

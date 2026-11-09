@@ -25,6 +25,16 @@ class ImagePreprocessor {
   static const _tightPaddingScale = 1.40;
   static const _contextMinimumSideFraction = 0.28;
   static const _tightMinimumSideFraction = 0.22;
+  static const _borderPoints = <Offset>[
+    Offset(0, 0),
+    Offset(0.5, 0),
+    Offset(1, 0),
+    Offset(0, 0.5),
+    Offset(1, 0.5),
+    Offset(0, 1),
+    Offset(0.5, 1),
+    Offset(1, 1),
+  ];
 
   static int effectivePortraitRotation({
     required int frameWidth,
@@ -107,21 +117,12 @@ class ImagePreprocessor {
         'Format kamera ${cameraImage.format.group.name} belum didukung.',
       );
     }
-    var oriented = _bgraToGray(cameraImage);
+    var oriented = _bgraImage(cameraImage);
     if (rotationDegrees != 0) {
       oriented = img.copyRotate(oriented, angle: rotationDegrees.toDouble());
     }
     if (mirrorHorizontally) oriented = img.flipHorizontal(oriented);
-    return CameraFrameCrops(
-      context: _cropAroundHand(
-        oriented,
-        bounds,
-        paddingScale: _contextPaddingScale,
-        minimumSideFraction: _contextMinimumSideFraction,
-      ),
-      tight: _cropAroundLandmarks(oriented, landmarks),
-      orientedLandmarks: landmarks,
-    );
+    return imageToGrayHandCrops(oriented, normalizedLandmarks: landmarks);
   }
 
   static CameraFrameCrops imageToGrayHandCrops(
@@ -133,17 +134,19 @@ class ImagePreprocessor {
     }
     final bounds = _boundsForPoints(normalizedLandmarks);
     return CameraFrameCrops(
-      context: toModelImage(
-        _cropAroundHand(
-          image,
+      context: _sampleImageCrop(
+        image,
+        _squareCropAroundBounds(
+          Size(image.width.toDouble(), image.height.toDouble()),
           bounds,
           paddingScale: _contextPaddingScale,
           minimumSideFraction: _contextMinimumSideFraction,
         ),
       ),
-      tight: toModelImage(
-        _cropAroundHand(
-          image,
+      tight: _sampleImageCrop(
+        image,
+        _squareCropAroundBounds(
+          Size(image.width.toDouble(), image.height.toDouble()),
           bounds,
           paddingScale: _tightPaddingScale,
           minimumSideFraction: _tightMinimumSideFraction,
@@ -151,6 +154,44 @@ class ImagePreprocessor {
       ),
       orientedLandmarks: List<Offset>.unmodifiable(normalizedLandmarks),
     );
+  }
+
+  // Still images, BGRA and YUV share the same sampling grid and square ROI.
+  // This also avoids rounding the crop to integer pixels only on the file path.
+  static img.Image _sampleImageCrop(img.Image image, Rect crop) {
+    final padding = _imageBorderLuminance(image).floor();
+    return _sampleModelCrop(
+      crop,
+      luminanceAt: (x, y) {
+        if (x < 0 || y < 0 || x >= image.width || y >= image.height) {
+          return padding;
+        }
+        return _pixelLuminance(image, x.floor(), y.floor()).floor();
+      },
+    );
+  }
+
+  static img.Image _sampleModelCrop(
+    Rect crop, {
+    required int Function(double x, double y) luminanceAt,
+  }) {
+    const offsets = <double>[0.125, 0.375, 0.625, 0.875];
+    final output = img.Image(width: 28, height: 28, numChannels: 1);
+    for (var y = 0; y < 28; y++) {
+      for (var x = 0; x < 28; x++) {
+        var sum = 0;
+        for (final sy in offsets) {
+          for (final sx in offsets) {
+            sum += luminanceAt(
+              crop.left + (x + sx) * crop.width / 28,
+              crop.top + (y + sy) * crop.height / 28,
+            );
+          }
+        }
+        output.setPixelR(x, y, sum ~/ 16);
+      }
+    }
+    return output;
   }
 
   static List<Offset> orientNormalizedPoints(
@@ -345,46 +386,39 @@ class ImagePreprocessor {
       rotationDegrees: rotationDegrees,
       mirrorHorizontally: mirrorHorizontally,
     );
-    final output = img.Image(width: 28, height: 28, numChannels: 1);
-    for (var outputY = 0; outputY < 28; outputY++) {
-      for (var outputX = 0; outputX < 28; outputX++) {
-        var sum = 0;
-        for (final sampleY in const <double>[0.25, 0.75]) {
-          for (final sampleX in const <double>[0.25, 0.75]) {
-            final orientedX =
-                (crop.left + (outputX + sampleX) * crop.width / 28) /
-                orientedSize.width;
-            final orientedY =
-                (crop.top + (outputY + sampleY) * crop.height / 28) /
-                orientedSize.height;
-            if (orientedX < 0 ||
-                orientedX >= 1 ||
-                orientedY < 0 ||
-                orientedY >= 1) {
-              sum += paddingLuminance;
-              continue;
-            }
-            final sensorPoint = _orientedToSensorPoint(
-              Offset(orientedX, orientedY),
-              rotationDegrees: rotationDegrees,
-              mirroredHorizontally: mirrorHorizontally,
-            );
-            final sensorX = (sensorPoint.dx * cameraImage.width).floor().clamp(
-              0,
-              cameraImage.width - 1,
-            );
-            final sensorY = (sensorPoint.dy * cameraImage.height).floor().clamp(
-              0,
-              cameraImage.height - 1,
-            );
-            sum += plane
-                .bytes[sensorY * plane.bytesPerRow + sensorX * pixelStride];
-          }
+    return _sampleModelCrop(
+      crop,
+      luminanceAt: (x, y) {
+        final orientedX = x / orientedSize.width;
+        final orientedY = y / orientedSize.height;
+        if (orientedX < 0 ||
+            orientedX >= 1 ||
+            orientedY < 0 ||
+            orientedY >= 1) {
+          return paddingLuminance;
         }
-        output.setPixelR(outputX, outputY, sum ~/ 4);
-      }
-    }
-    return output;
+        // Quantize in the upright image before mapping back to the sensor.
+        // Otherwise a sample exactly on a pixel edge can choose the adjacent
+        // pixel after a 90-degree rotation or mirror, unlike the still-image path.
+        final sensorPoint = _orientedToSensorPoint(
+          Offset(
+            (x.floor() + 0.5) / orientedSize.width,
+            (y.floor() + 0.5) / orientedSize.height,
+          ),
+          rotationDegrees: rotationDegrees,
+          mirroredHorizontally: mirrorHorizontally,
+        );
+        final sensorX = (sensorPoint.dx * cameraImage.width).floor().clamp(
+          0,
+          cameraImage.width - 1,
+        );
+        final sensorY = (sensorPoint.dy * cameraImage.height).floor().clamp(
+          0,
+          cameraImage.height - 1,
+        );
+        return plane.bytes[sensorY * plane.bytesPerRow + sensorX * pixelStride];
+      },
+    );
   }
 
   static int _cameraBorderLuminance(
@@ -392,23 +426,22 @@ class ImagePreprocessor {
     required int rotationDegrees,
     required bool mirrorHorizontally,
   }) {
-    const points = <Offset>[
-      Offset(0.02, 0.02),
-      Offset(0.50, 0.02),
-      Offset(0.98, 0.02),
-      Offset(0.02, 0.50),
-      Offset(0.98, 0.50),
-      Offset(0.02, 0.98),
-      Offset(0.50, 0.98),
-      Offset(0.98, 0.98),
-    ];
+    final size = _orientedSize(
+      cameraImage.width,
+      cameraImage.height,
+      rotationDegrees,
+    );
     final plane = cameraImage.planes.first;
     final pixelStride = plane.bytesPerPixel ?? 1;
     final values =
-        points
+        _borderPoints
             .map((point) {
+              final pixelCenter = Offset(
+                ((point.dx * (size.width - 1)).floor() + 0.5) / size.width,
+                ((point.dy * (size.height - 1)).floor() + 0.5) / size.height,
+              );
               final sensorPoint = _orientedToSensorPoint(
-                point,
+                pixelCenter,
                 rotationDegrees: rotationDegrees,
                 mirroredHorizontally: mirrorHorizontally,
               );
@@ -488,37 +521,26 @@ class ImagePreprocessor {
   static num _imageBorderLuminance(img.Image source) {
     final maxX = source.width - 1;
     final maxY = source.height - 1;
-    final values = <num>[
-      _pixelLuminance(source, 0, 0),
-      _pixelLuminance(source, maxX ~/ 2, 0),
-      _pixelLuminance(source, maxX, 0),
-      _pixelLuminance(source, 0, maxY ~/ 2),
-      _pixelLuminance(source, maxX, maxY ~/ 2),
-      _pixelLuminance(source, 0, maxY),
-      _pixelLuminance(source, maxX ~/ 2, maxY),
-      _pixelLuminance(source, maxX, maxY),
-    ]..sort();
+    final values =
+        _borderPoints
+            .map(
+              (point) => _pixelLuminance(
+                source,
+                (point.dx * maxX).floor(),
+                (point.dy * maxY).floor(),
+              ),
+            )
+            .toList()
+          ..sort();
     return (values[3] + values[4]) / 2;
   }
 
   static num _pixelLuminance(img.Image source, int x, int y) {
     final pixel = source.getPixel(x, y);
-    return source.numChannels == 1 ? pixel.r : pixel.luminance;
+    return source.numChannels == 1 ? pixel.r : pixel.luminance.round();
   }
 
-  static img.Image _cropAroundLandmarks(
-    img.Image source,
-    List<Offset> normalizedLandmarks,
-  ) {
-    return _cropAroundHand(
-      source,
-      _boundsForPoints(normalizedLandmarks),
-      paddingScale: _tightPaddingScale,
-      minimumSideFraction: _tightMinimumSideFraction,
-    );
-  }
-
-  static img.Image _bgraToGray(CameraImage cameraImage) {
+  static img.Image _bgraImage(CameraImage cameraImage) {
     final plane = cameraImage.planes.first;
     final source = img.Image.fromBytes(
       width: cameraImage.width,
@@ -529,6 +551,8 @@ class ImagePreprocessor {
       numChannels: 4,
       order: img.ChannelOrder.bgra,
     );
-    return img.grayscale(source);
+    // Convert to luminance once, in the shared crop sampler. Converting here
+    // and reading RGB luminance again can truncate a neutral pixel twice.
+    return source;
   }
 }

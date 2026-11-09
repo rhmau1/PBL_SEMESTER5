@@ -875,9 +875,9 @@ class _CameraScreenState extends State<CameraScreen>
     final analysisGeneration = _analysisGeneration;
 
     // CameraPreview mirrors the front camera for the user, but the raw image
-    // stream and MediaPipe landmarks are not mirrored. The ASL model was also
-    // trained in that canonical orientation: mirroring a clear C makes it
-    // predict P. Keep the model input unmirrored for both camera lenses.
+    // stream and MediaPipe landmarks are not mirrored. Keep their geometry
+    // aligned. Any experimental model-input mirror is handled by SignClassifier
+    // and must not mirror the preview or MediaPipe coordinates a second time.
     const mirrorForModel = false;
     _lastFrameWidth = cameraImage.width;
     _lastFrameHeight = cameraImage.height;
