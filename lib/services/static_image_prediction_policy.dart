@@ -58,4 +58,24 @@ class StaticImagePredictionPolicy {
           .toList(),
     );
   }
+
+  /// A recovered detection cannot override a confident, conflicting full view.
+  /// This is a rejection check, never a way to replace the predicted letter.
+  static SignPrediction confirmRecoveredHand(
+    List<String> labels,
+    SignPrediction crop,
+    SignPrediction fullImage,
+  ) {
+    if (fullImage.confidence < 0.60 ||
+        crop.label == fullImage.label ||
+        crop.confidence <= 0.59) {
+      return crop;
+    }
+    final uniform = 1 / labels.length;
+    final scale = (0.59 - uniform) / (crop.confidence - uniform);
+    return fromScores(
+      labels,
+      crop.scores.map((score) => uniform + (score - uniform) * scale).toList(),
+    );
+  }
 }

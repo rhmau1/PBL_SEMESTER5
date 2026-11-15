@@ -56,4 +56,36 @@ void main() {
     expect(() => policy(labels, [1, 0]), throwsArgumentError);
     expect(() => policy(labels, [double.nan, 0, 0]), throwsArgumentError);
   });
+
+  test(
+    'a recovered crop cannot override a confident conflicting full photo',
+    () {
+      final crop = policy(labels, [.995, .003, .002]);
+      final full = policy(labels, [.1, .88, .02]);
+      final result = StaticImagePredictionPolicy.confirmRecoveredHand(
+        labels,
+        crop,
+        full,
+      );
+      expect(result.label, crop.label);
+      expect(result.confidence, closeTo(.59, 1e-12));
+      expect(result.scores.reduce((a, b) => a + b), closeTo(1, 1e-12));
+    },
+  );
+
+  test(
+    'recovered crop is retained when the full view is inconclusive or agrees',
+    () {
+      final crop = policy(labels, [.1, .65, .25]);
+      for (final full in [
+        policy(labels, [.55, .4, .05]),
+        policy(labels, [.05, .9, .05]),
+      ]) {
+        expect(
+          StaticImagePredictionPolicy.confirmRecoveredHand(labels, crop, full),
+          same(crop),
+        );
+      }
+    },
+  );
 }

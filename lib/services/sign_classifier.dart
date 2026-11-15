@@ -40,6 +40,8 @@ class SignClassifier {
   SignPrediction? _lastMirroredTightPrediction;
   SignPrediction? _lastLandmarkPrediction;
   List<Offset> _lastInputLandmarks = const [];
+  bool _lastUsedPaddingRetry = false;
+  SignPrediction? _lastFullImagePrediction;
 
   bool get isReady =>
       _interpreter != null && _isolateInterpreter != null && _labels.isNotEmpty;
@@ -57,6 +59,8 @@ class SignClassifier {
   SignPrediction? get lastLandmarkPrediction => _lastLandmarkPrediction;
   List<Offset> get lastInputLandmarks => _lastInputLandmarks;
   bool get usesOrientationEnsemble => _useOrientationEnsemble;
+  bool get lastUsedPaddingRetry => _lastUsedPaddingRetry;
+  SignPrediction? get lastFullImagePrediction => _lastFullImagePrediction;
 
   Future<void> initialize() => _initialization ??= _load();
 
@@ -104,15 +108,28 @@ class SignClassifier {
   }
 
   Future<SignPrediction> classifyFile(String path) async {
+    _clearImageDiagnostics();
     const detector = StillImageHandDetector();
     final image = await detector.loadImage(path);
-    final landmarks = await detector.detect(image);
+    final detection = await detector.detectWithDetails(image);
+    _lastUsedPaddingRetry = detection.usedPaddingRetry;
     if (!isReady) await initialize();
-    return _classifyHandCrops(
+    final prediction = await _classifyHandCrops(
       ImagePreprocessor.imageToGrayHandCrops(
         image,
-        normalizedLandmarks: landmarks,
+        normalizedLandmarks: detection.landmarks,
       ),
+      verifyBothCrops: true,
+    );
+    if (!detection.usedPaddingRetry) return prediction;
+    final full = await _classifyModelImage(
+      ImagePreprocessor.toModelImage(image),
+    );
+    _lastFullImagePrediction = full;
+    return StaticImagePredictionPolicy.confirmRecoveredHand(
+      _labels,
+      prediction,
+      full,
     );
   }
 
@@ -134,7 +151,10 @@ class SignClassifier {
     return _classifyHandCrops(crops);
   }
 
-  Future<SignPrediction> _classifyHandCrops(CameraFrameCrops crops) async {
+  Future<SignPrediction> _classifyHandCrops(
+    CameraFrameCrops crops, {
+    bool verifyBothCrops = false,
+  }) async {
     final contextInput = ImagePreprocessor.toModelImage(crops.context);
     final contextPrediction = await _classifyModelImage(contextInput);
     final landmarkPrediction = _classifyLandmarks(crops.orientedLandmarks);
@@ -158,7 +178,7 @@ class SignClassifier {
         mirrored,
       );
     }
-    if (context.confidence >= 0.90) return context;
+    if (!verifyBothCrops && context.confidence >= 0.90) return context;
 
     final tightPrediction = await _classifyModelImage(
       _lastTightInput = ImagePreprocessor.toModelImage(crops.tight),
@@ -274,6 +294,12 @@ class SignClassifier {
     _interpreter?.close();
     _interpreter = null;
     _initialization = null;
+    _clearImageDiagnostics();
+  }
+
+  void _clearImageDiagnostics() {
+    _lastUsedPaddingRetry = false;
+    _lastFullImagePrediction = null;
     _lastContextInput = null;
     _lastTightInput = null;
     _lastContextPrediction = null;
