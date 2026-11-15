@@ -31,8 +31,8 @@ from training_common import (
 
 LABELS = list("ABCDEFGHIKLMNOPQRSTUVWXY")
 HF_DATASET = "Marxulia/asl_sign_languages_alphabets_v03"
-PREPROCESS_VERSION = "static_mediapipe_square_v2"
-FUSION_VERSION = "app_context090_blend055_045_disagree059_v1"
+PREPROCESS_VERSION = "static_mediapipe_grid4_padding_retry_v3"
+FUSION_VERSION = "photo_blend055_045_disagree059_retry_fullview_v2"
 
 
 def _implementation_identity():
@@ -242,13 +242,7 @@ def _dart_round(value):
 
 
 def square_hand_crop(image, points, padding_scale=1.60, minimum_side_fraction=0.28):
-    """App square geometry, border padding, no aspect-ratio stretching.
-
-    OpenCV INTER_AREA approximates Dart image.Interpolation.average. Exact
-    byte-for-byte Flutter resize equivalence requires a separate device check.
-    """
-    import cv2
-
+    """Match imageToGrayHandCrops: rounded luminance, 4x4 samples, floor mean."""
     rgb = np.asarray(image, dtype=np.uint8)
     height, width = rgb.shape[:2]
     points = np.asarray(points, dtype=np.float64)
@@ -260,20 +254,41 @@ def square_hand_crop(image, points, padding_scale=1.60, minimum_side_fraction=0.
     minimum_side = np.clip(min(width, height) * minimum_side_fraction, 1, min(width, height))
     side = float(np.clip(max(right - left, bottom - top) * padding_scale,
                          minimum_side, max(width, height)))
-    start_x = _dart_round((left + right - side) / 2)
-    start_y = _dart_round((top + bottom - side) / 2)
-    side_px = max(1, _dart_round(side))
-    gray = (rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114)
+    start_x = (left + right - side) / 2
+    start_y = (top + bottom - side) / 2
+    gray = np.floor(rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114 + 0.5).astype(np.int64)
     border = [gray[0, 0], gray[0, (width - 1) // 2], gray[0, -1],
               gray[(height - 1) // 2, 0], gray[(height - 1) // 2, -1],
               gray[-1, 0], gray[-1, (width - 1) // 2], gray[-1, -1]]
-    output = np.full((side_px, side_px), np.median(border), dtype=np.float32)
-    x0, y0 = max(0, start_x), max(0, start_y)
-    x1, y1 = min(width, start_x + side_px), min(height, start_y + side_px)
-    if x1 > x0 and y1 > y0:
-        output[y0 - start_y:y1 - start_y, x0 - start_x:x1 - start_x] = gray[y0:y1, x0:x1]
-    resized = cv2.resize(output, (28, 28), interpolation=cv2.INTER_AREA)
-    return np.clip(np.rint(resized), 0, 255).astype(np.uint8)[..., None]
+    padding = int(np.floor(np.median(border)))
+    offsets = np.array([0.125, 0.375, 0.625, 0.875])
+    x = start_x + (np.arange(28)[:, None] + offsets) * side / 28
+    y = start_y + (np.arange(28)[:, None] + offsets) * side / 28
+    xi = np.clip(np.floor(x).astype(np.int64), 0, width - 1)
+    yi = np.clip(np.floor(y).astype(np.int64), 0, height - 1)
+    samples = gray[yi[:, None, :, None], xi[None, :, None, :]]
+    valid = ((y >= 0) & (y < height))[:, None, :, None] & ((x >= 0) & (x < width))[None, :, None, :]
+    samples = np.where(valid, samples, padding)
+    return (samples.sum(axis=(2, 3)) // 16).astype(np.uint8)[..., None]
+
+
+def full_image_model_input(image):
+    """Dart center square + copyResize(average), then rounded luminance."""
+    rgb = np.asarray(image, dtype=np.uint8)
+    height, width = rgb.shape[:2]
+    side = min(width, height)
+    rgb = rgb[(height - side) // 2:(height - side) // 2 + side,
+              (width - side) // 2:(width - side) // 2 + side]
+    output = np.zeros((28, 28, 3), dtype=np.uint8)
+    ratio = side / 28
+    for y in range(28):
+        y0, y1 = int(y * ratio), max(int(y * ratio) + 1, int((y + 1) * ratio))
+        for x in range(28):
+            x0, x1 = int(x * ratio), max(int(x * ratio) + 1, int((x + 1) * ratio))
+            area = rgb[y0:y1, x0:x1].astype(np.float64)
+            output[y, x] = np.floor(area.sum(axis=(0, 1)) * (1.0 / (area.shape[0] * area.shape[1])))
+    gray = np.floor(output[..., 0] * 0.299 + output[..., 1] * 0.587 + output[..., 2] * 0.114 + 0.5)
+    return gray.astype(np.uint8)[..., None]
 
 
 def _prepare_real_crops(records, cfg, paths, reports):
@@ -283,7 +298,9 @@ def _prepare_real_crops(records, cfg, paths, reports):
                  "detector_image": "JPEG quality95 RGB roundtrip; crop uses original resized RGB",
                  "records": [{k: row[k] for k in ("id", "group_id", "label", "split")} for row in records],
                  "crop": {"context": [1.60, 0.28], "tight": [1.40, 0.22]},
-                 "rgb_to_gray": [0.299, 0.587, 0.114], "resize": "OpenCV INTER_AREA"}
+                 "rgb_to_gray": [0.299, 0.587, 0.114],
+                 "resize": "rounded luminance; grid4 samples; floor mean",
+                 "retry": "white border longest_side/8 max128, only zero hands, inverse-map landmarks"}
     key = "static_crops_" + stable_hash(signature)
 
     def build():
@@ -300,9 +317,11 @@ def _prepare_real_crops(records, cfg, paths, reports):
         count = len(records)
         contexts = np.zeros((count, 28, 28, 1), dtype=np.uint8)
         tights = np.zeros_like(contexts)
+        full_images = np.zeros_like(contexts)
+        padding_retry = np.zeros(count, dtype=bool)
         valid = np.zeros(count, dtype=bool)
         status = np.full(count, "not_processed", dtype="U160")
-        landmarks = np.full((count, 21, 2), np.nan, dtype=np.float32)
+        landmarks = np.full((count, 21, 2), np.nan, dtype=np.float64)
         with vision.HandLandmarker.create_from_options(options) as detector:
             for index, row in enumerate(records):
                 if index % 500 == 0:
@@ -321,6 +340,17 @@ def _prepare_real_crops(records, cfg, paths, reports):
                     with Image.open(io.BytesIO(encoded.getvalue())) as detector_image:
                         detection_array = np.asarray(detector_image.convert("RGB"), dtype=np.uint8).copy()
                     result = detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=detection_array))
+                    border = 0
+                    if not result.hand_landmarks:
+                        border = max(1, min(128, _dart_round(max(image.size) / 8)))
+                        padded = Image.new("RGB", (image.width + 2 * border, image.height + 2 * border), "white")
+                        padded.paste(image, (border, border))
+                        encoded = io.BytesIO()
+                        padded.save(encoded, format="JPEG", quality=95)
+                        with Image.open(io.BytesIO(encoded.getvalue())) as decoded:
+                            detection_array = np.asarray(decoded.convert("RGB"), dtype=np.uint8).copy()
+                        result = detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=detection_array))
+                        padding_retry[index] = True
                 except Exception as exc:
                     # Runtime/decoder failures are not silently mislabeled as
                     # a valid no-hand result. Stop so environment issues surface.
@@ -328,16 +358,23 @@ def _prepare_real_crops(records, cfg, paths, reports):
                 if len(result.hand_landmarks) != 1:
                     status[index] = "no_hand" if not result.hand_landmarks else "multiple_hands"
                     continue
-                points = np.array([[point.x, point.y] for point in result.hand_landmarks[0]], dtype=np.float32)
+                points = np.array([[point.x, point.y] for point in result.hand_landmarks[0]], dtype=np.float64)
+                if border:
+                    points = (points * [image.width + 2 * border, image.height + 2 * border] - border) / [image.width, image.height]
+                    if (points < 0).any() or (points > 1).any():
+                        status[index] = "invalid_landmarks"
+                        continue
                 if points.shape != (21, 2) or not np.isfinite(points).all():
                     status[index] = "invalid_landmarks"
                     continue
                 landmarks[index] = np.clip(points, 0, 1)
                 contexts[index] = square_hand_crop(array, points, 1.60, 0.28)
                 tights[index] = square_hand_crop(array, points, 1.40, 0.22)
+                full_images[index] = full_image_model_input(array)
                 valid[index] = True
                 status[index] = "detected_one_hand"
-        return {"context": contexts, "tight": tights, "valid": valid,
+        return {"context": contexts, "tight": tights, "full_image": full_images,
+                "padding_retry": padding_retry, "valid": valid,
                 "status": status, "landmarks": landmarks}
 
     values = cached_npz(paths["cache"], key, build)
@@ -380,20 +417,26 @@ def _save_crop_examples(records, crops, path):
     plt.close(fig)
 
 
-def fuse_app_scores(context_scores, tight_scores):
-    """Mirror current Flutter decision logic, before UI confidence acceptance."""
+def fuse_app_scores(context_scores, tight_scores, full_image_scores=None, padding_retry=None):
+    """Photo/Upload policy. Camera live retains its separate early return."""
     context = np.asarray(context_scores, dtype=np.float64)
     tight = np.asarray(tight_scores, dtype=np.float64)
     if context.shape != tight.shape or context.ndim != 2 or context.shape[1] != 24:
         raise ValueError("Fusion membutuhkan dua score array [N,24]")
-    output = context.copy()
-    need_tight = context.max(axis=1) < 0.90
-    output[need_tight] = context[need_tight] * 0.55 + tight[need_tight] * 0.45
-    disagreement = need_tight & (context.argmax(axis=1) != tight.argmax(axis=1))
+    output = context * 0.55 + tight * 0.45
+    disagreement = context.argmax(axis=1) != tight.argmax(axis=1)
     cap_rows = disagreement & (output.max(axis=1) > 0.59)
     uniform = 1 / 24
     scale = (0.59 - uniform) / (output[cap_rows].max(axis=1) - uniform)
     output[cap_rows] = uniform + (output[cap_rows] - uniform) * scale[:, None]
+    if full_image_scores is not None:
+        full = np.asarray(full_image_scores, dtype=np.float64)
+        retry = np.asarray(padding_retry, dtype=bool)
+        if full.shape != context.shape or retry.shape != (len(context),):
+            raise ValueError("Full-image scores dan status retry tidak sesuai")
+        veto = retry & (full.max(axis=1) >= 0.60) & (full.argmax(axis=1) != output.argmax(axis=1)) & (output.max(axis=1) > 0.59)
+        scale = (0.59 - uniform) / (output[veto].max(axis=1) - uniform)
+        output[veto] = uniform + (output[veto] - uniform) * scale[:, None]
     return output.astype(np.float32)
 
 
@@ -414,7 +457,8 @@ def _evaluate_photos(model, records, crops, subset, output_dir, cfg):
     valid_ids = ids[crops["valid"][ids]]
     context_scores = _predict(model, crops["context"][valid_ids], int(cfg["batch_size"]))
     tight_scores = _predict(model, crops["tight"][valid_ids], int(cfg["batch_size"]))
-    fused = fuse_app_scores(context_scores, tight_scores)
+    full_scores = _predict(model, crops["full_image"][valid_ids], int(cfg["batch_size"]))
+    fused = fuse_app_scores(context_scores, tight_scores, full_scores, crops["padding_retry"][valid_ids])
     by_id = {int(photo_id): local for local, photo_id in enumerate(valid_ids)}
     predictions, y_true, rows = [], [], []
     for photo_id in ids:
@@ -620,7 +664,7 @@ def _evaluate_existing_static(cfg, paths):
         "preprocessing": {"version": PREPROCESS_VERSION, "fusion": FUSION_VERSION,
                           "hand_task_sha256": sha256_file(paths["hand_task"]),
                           "detector": "MediaPipe IMAGE, JPEG95 detection; square context+tight crops",
-                          "resize_limit": "OpenCV area approximation; no byte-identical Flutter resize claim."},
+                          "resize_limit": "Grid4 crop matches Dart fixtures. JPEG decoders and >1024 resize still require device parity."},
         "independent_new_static_test": False,
         "claim": "Current 24-letter model is preserved. Only J/Z temporal model is trained in the default workflow.",
     }

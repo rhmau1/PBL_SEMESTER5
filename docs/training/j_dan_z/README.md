@@ -11,4 +11,15 @@ Unggah `TRAINING_J_Z_COLAB.ipynb` ke Google Colab, pilih GPU, lalu jalankan **Ru
 | `requirements_colab.txt` | Dependency training |
 | `baseline_model/` | Model 24 huruf, label, dan metadata yang diperlukan skrip |
 
-Kode training di folder ini sama dengan kode pada hasil training 1 November 2026.
+Hasil training 1 November 2026 tetap menjadi arsip. Pembaruan 15 November 2026
+menyamakan sampling crop evaluasi foto dengan aplikasi: luminance dibulatkan,
+grid 4 × 4, lalu rata-rata dibulatkan ke bawah. Deteksi foto yang kosong dicoba
+sekali lagi dengan border putih dan koordinat dipetakan kembali ke foto asli.
+Hasil retry diperiksa terhadap foto utuh sebelum diterima. Cache lama tidak
+dipakai untuk versi preprocessing baru.
+
+Notebook mandiri sudah memuat pembaruan ini. Model 24 huruf tetap dievaluasi
+tanpa training ulang. Penyamaan preprocessing tidak mengubah bobot model
+atau menjamin semua foto nyata langsung benar. Kontrak piksel diuji melalui
+`test/static_preprocessing_contract_test.dart` dan
+`test/training_static_preprocessing_test.py` di root proyek.
