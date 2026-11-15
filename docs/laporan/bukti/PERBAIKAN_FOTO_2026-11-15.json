@@ -1,0 +1,118 @@
+{
+  "scope": "Actual Vivo 1918, production UploadScreen + classifyUploadFile. Automated original-file selection. No history writes during batch.",
+  "device": "33a40574",
+  "results": {
+    "drive": {
+      "after": {
+        "correct": 13,
+        "wrong": 4,
+        "uncertain": 6,
+        "rejected": 1,
+        "n": 24
+      },
+      "before": {
+        "correct": 12,
+        "wrong": 4,
+        "uncertain": 1,
+        "rejected": 7,
+        "n": 24
+      },
+      "detected": 23
+    },
+    "real73": {
+      "after": {
+        "correct": 6,
+        "wrong": 11,
+        "uncertain": 56,
+        "rejected": 0,
+        "n": 73
+      },
+      "before": {
+        "correct": 6,
+        "wrong": 12,
+        "uncertain": 55,
+        "rejected": 0,
+        "n": 73
+      },
+      "detected": 73
+    },
+    "mnist100": {
+      "after": {
+        "correct": 0,
+        "wrong": 0,
+        "uncertain": 0,
+        "rejected": 100,
+        "n": 100
+      },
+      "detected": 0
+    },
+    "negative": {
+      "after": {
+        "correct": 0,
+        "wrong": 0,
+        "uncertain": 0,
+        "rejected": 7,
+        "n": 7
+      },
+      "detected": 0
+    }
+  },
+  "regressions": [],
+  "new_correct": [
+    {
+      "dataset": "drive",
+      "file": "k1.jpg"
+    }
+  ],
+  "native_context_parity": {
+    "drive": {
+      "compared": 17,
+      "pixel_identical": 17
+    },
+    "real73": {
+      "compared": 73,
+      "pixel_identical": 73
+    }
+  },
+  "mnist_direct_correct": 100,
+  "model_sha256": {
+    "assets/models/model_float16.tflite": "74f52ab0d6f091b37600ce65c4b7797a102c6e26112b6c2e4824483b168140bc",
+    "assets/models/jz/model_float16.tflite": "e2e34dea6a0938e776b4d14117e64953e0ca9f2d853023c58d3087f320cf74e5"
+  },
+  "normal_apk_models_match": true,
+  "normal_apk_sha256": "57e469496bde996543efcc44eddcce68caf5894ddceee41144b44a89b3da28bc",
+  "production_source_sha256": {
+    "lib/services/still_image_hand_detector.dart": "0c86ab0253453c91c0b78de943323ec02b075b92fddf5263a17139dd54b79548",
+    "lib/services/sign_classifier.dart": "3af770536b9bbcf6a2932d1ebaf79f563c0c05c25f23685cb5c5d56f4a283f64",
+    "lib/services/static_image_prediction_policy.dart": "98da9e7282400ca992534eb1c29ddaeae395bb5ba2d3b521e14966fd5ce7b8ac"
+  },
+  "unresolved_drive": [
+    {
+      "letter": "C",
+      "prediction": "O",
+      "confidence": 0.7824002504348755
+    },
+    {
+      "letter": "O",
+      "prediction": "E",
+      "confidence": 0.9380506426095963
+    },
+    {
+      "letter": "P",
+      "prediction": "Q",
+      "confidence": 0.876657384634018
+    },
+    {
+      "letter": "W",
+      "prediction": "V",
+      "confidence": 0.9951991021633149
+    }
+  ],
+  "all_prediction_errors_fixed": false,
+  "limits": [
+    "Drive filename labels and real-photo capture-order labels are not expert-certified.",
+    "These samples were used in development and are not a new independent final test.",
+    "Historical real73 baseline was measured on V2310. Current run is on Vivo 1918; native input parity is reported separately.",
+    "No new static model training or fine-tuning took place. Four Drive misclassifications remain."
+  ]
+}
