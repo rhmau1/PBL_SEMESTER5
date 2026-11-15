@@ -78,4 +78,28 @@ class StaticImagePredictionPolicy {
       crop.scores.map((score) => uniform + (score - uniform) * scale).toList(),
     );
   }
+
+  /// An uncertain still photo can be recovered only by three strong, agreeing
+  /// views. The caller must first validate the background and foreground ROI.
+  /// An already accepted prediction is never replaced by this fallback.
+  static SignPrediction recoverUncertainPhoto(
+    List<String> labels, {
+    required SignPrediction primary,
+    required SignPrediction full,
+    required SignPrediction context,
+    required SignPrediction tight,
+  }) {
+    if (primary.confidence >= 0.60) return primary;
+    final views = [full, context, tight];
+    if (views.any((p) => p.confidence < 0.80 || p.label != full.label)) {
+      return primary;
+    }
+    return fromScores(
+      labels,
+      List<double>.generate(
+        labels.length,
+        (i) => (full.scores[i] + context.scores[i] + tight.scores[i]) / 3,
+      ),
+    );
+  }
 }

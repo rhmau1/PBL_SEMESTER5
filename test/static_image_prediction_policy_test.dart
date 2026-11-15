@@ -5,6 +5,57 @@ void main() {
   const labels = ['A', 'B', 'C'];
   final policy = StaticImagePredictionPolicy.fromScores;
 
+  test(
+    'three strong agreeing views recover an uncertain photo without a target',
+    () {
+      final result = StaticImagePredictionPolicy.recoverUncertainPhoto(
+        labels,
+        primary: policy(labels, [.3, .5, .2]),
+        full: policy(labels, [.90, .05, .05]),
+        context: policy(labels, [.85, .10, .05]),
+        tight: policy(labels, [.95, .02, .03]),
+      );
+      expect(result.label, 'A');
+      expect(result.confidence, closeTo(.9, 1e-12));
+      expect(result.scores.reduce((a, b) => a + b), closeTo(1, 1e-12));
+    },
+  );
+
+  test('photo fallback never changes an already accepted result', () {
+    final primary = policy(labels, [.05, .9, .05]);
+    final other = policy(labels, [.99, .005, .005]);
+    expect(
+      StaticImagePredictionPolicy.recoverUncertainPhoto(
+        labels,
+        primary: primary,
+        full: other,
+        context: other,
+        tight: other,
+      ),
+      same(primary),
+    );
+  });
+
+  test('recovery is rejected when any view is weak or disagrees', () {
+    final primary = policy(labels, [.3, .5, .2]);
+    final strong = policy(labels, [.9, .05, .05]);
+    for (final weakOrDifferent in [
+      policy(labels, [.79, .15, .06]),
+      policy(labels, [.05, .9, .05]),
+    ]) {
+      expect(
+        StaticImagePredictionPolicy.recoverUncertainPhoto(
+          labels,
+          primary: primary,
+          full: strong,
+          context: strong,
+          tight: weakOrDifferent,
+        ),
+        same(primary),
+      );
+    }
+  });
+
   test('normal and mirrored views give the same combined prediction in either order', () {
     final a = policy(labels, [.8, .15, .05]);
     final b = policy(labels, [.6, .3, .1]);

@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../models/sign_prediction.dart';
 import 'image_preprocessor.dart';
+import 'photo_recovery_preprocessor.dart';
 import 'still_image_hand_detector.dart';
 import 'static_image_prediction_policy.dart';
 
@@ -42,6 +44,11 @@ class SignClassifier {
   List<Offset> _lastInputLandmarks = const [];
   bool _lastUsedPaddingRetry = false;
   SignPrediction? _lastFullImagePrediction;
+  PhotoRecoveryInputs? _lastPhotoRecoveryInputs;
+  SignPrediction? _lastPhotoRecoveryContextPrediction;
+  SignPrediction? _lastPhotoRecoveryTightPrediction;
+  SignPrediction? _lastPhotoRecoveryFullPrediction;
+  bool _lastPhotoRecoveryApplied = false;
 
   bool get isReady =>
       _interpreter != null && _isolateInterpreter != null && _labels.isNotEmpty;
@@ -61,6 +68,27 @@ class SignClassifier {
   bool get usesOrientationEnsemble => _useOrientationEnsemble;
   bool get lastUsedPaddingRetry => _lastUsedPaddingRetry;
   SignPrediction? get lastFullImagePrediction => _lastFullImagePrediction;
+  List<int>? get lastPhotoRecoveryContextInputPng =>
+      _lastPhotoRecoveryInputs == null
+      ? null
+      : img.encodePng(_lastPhotoRecoveryInputs!.context);
+  List<int>? get lastPhotoRecoveryTightInputPng =>
+      _lastPhotoRecoveryInputs == null
+      ? null
+      : img.encodePng(_lastPhotoRecoveryInputs!.tight);
+  List<int>? get lastPhotoRecoveryFullInputPng =>
+      _lastPhotoRecoveryInputs == null
+      ? null
+      : img.encodePng(_lastPhotoRecoveryInputs!.full);
+  SignPrediction? get lastPhotoRecoveryContextPrediction =>
+      _lastPhotoRecoveryContextPrediction;
+  SignPrediction? get lastPhotoRecoveryTightPrediction =>
+      _lastPhotoRecoveryTightPrediction;
+  SignPrediction? get lastPhotoRecoveryFullPrediction =>
+      _lastPhotoRecoveryFullPrediction;
+  Rect? get lastPhotoRecoveryBounds =>
+      _lastPhotoRecoveryInputs?.foregroundBounds;
+  bool get lastPhotoRecoveryApplied => _lastPhotoRecoveryApplied;
 
   Future<void> initialize() => _initialization ??= _load();
 
@@ -114,23 +142,47 @@ class SignClassifier {
     final detection = await detector.detectWithDetails(image);
     _lastUsedPaddingRetry = detection.usedPaddingRetry;
     if (!isReady) await initialize();
-    final prediction = await _classifyHandCrops(
+    var prediction = await _classifyHandCrops(
       ImagePreprocessor.imageToGrayHandCrops(
         image,
         normalizedLandmarks: detection.landmarks,
       ),
       verifyBothCrops: true,
     );
-    if (!detection.usedPaddingRetry) return prediction;
-    final full = await _classifyModelImage(
-      ImagePreprocessor.toModelImage(image),
+    if (detection.usedPaddingRetry) {
+      final full = await _classifyModelImage(
+        ImagePreprocessor.toModelImage(image),
+      );
+      _lastFullImagePrediction = full;
+      prediction = StaticImagePredictionPolicy.confirmRecoveredHand(
+        _labels,
+        prediction,
+        full,
+      );
+    }
+    if (prediction.confidence >= 0.60) return prediction;
+    final recovery = await compute(
+      PhotoRecoveryPreprocessor.prepare,
+      PhotoRecoveryRequest(image, detection.landmarks),
     );
-    _lastFullImagePrediction = full;
-    return StaticImagePredictionPolicy.confirmRecoveredHand(
+    if (recovery == null) return prediction;
+    _lastPhotoRecoveryInputs = recovery;
+    final full =
+        _lastFullImagePrediction ?? await _classifyModelImage(recovery.full);
+    final context = await _classifyModelImage(recovery.context);
+    final tight = await _classifyModelImage(recovery.tight);
+    _lastPhotoRecoveryFullPrediction = full;
+    _lastPhotoRecoveryContextPrediction = context;
+    _lastPhotoRecoveryTightPrediction = tight;
+    final recovered = StaticImagePredictionPolicy.recoverUncertainPhoto(
       _labels,
-      prediction,
-      full,
+      primary: prediction,
+      full: full,
+      context: context,
+      tight: tight,
     );
+    _lastPhotoRecoveryApplied = !identical(recovered, prediction);
+    return recovered;
   }
 
   Future<SignPrediction> classifyUploadFile(String path) => classifyFile(path);
@@ -155,6 +207,7 @@ class SignClassifier {
     CameraFrameCrops crops, {
     bool verifyBothCrops = false,
   }) async {
+    _clearPhotoRecoveryDiagnostics();
     final contextInput = ImagePreprocessor.toModelImage(crops.context);
     final contextPrediction = await _classifyModelImage(contextInput);
     final landmarkPrediction = _classifyLandmarks(crops.orientedLandmarks);
@@ -298,6 +351,7 @@ class SignClassifier {
   }
 
   void _clearImageDiagnostics() {
+    _clearPhotoRecoveryDiagnostics();
     _lastUsedPaddingRetry = false;
     _lastFullImagePrediction = null;
     _lastContextInput = null;
@@ -308,6 +362,14 @@ class SignClassifier {
     _lastMirroredTightPrediction = null;
     _lastLandmarkPrediction = null;
     _lastInputLandmarks = const [];
+  }
+
+  void _clearPhotoRecoveryDiagnostics() {
+    _lastPhotoRecoveryInputs = null;
+    _lastPhotoRecoveryContextPrediction = null;
+    _lastPhotoRecoveryTightPrediction = null;
+    _lastPhotoRecoveryFullPrediction = null;
+    _lastPhotoRecoveryApplied = false;
   }
 
   static bool _sameShape(List<int> actual, List<int> expected) {
