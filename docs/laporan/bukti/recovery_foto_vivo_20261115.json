@@ -1,0 +1,142 @@
+{
+  "device": "vivo_1918",
+  "serial": "33a40574",
+  "scope": "204 inputs via production UploadScreen, automated source selection; no history writes",
+  "results": {
+    "drive": {
+      "before": {
+        "correct": 13,
+        "wrong": 4,
+        "uncertain": 6,
+        "rejected": 1
+      },
+      "after": {
+        "correct": 15,
+        "wrong": 4,
+        "uncertain": 4,
+        "rejected": 1
+      },
+      "n": 24
+    },
+    "real73": {
+      "before": {
+        "correct": 6,
+        "wrong": 11,
+        "uncertain": 56,
+        "rejected": 0
+      },
+      "after": {
+        "correct": 6,
+        "wrong": 11,
+        "uncertain": 56,
+        "rejected": 0
+      },
+      "n": 73
+    },
+    "mnist100": {
+      "before": {
+        "correct": 0,
+        "wrong": 0,
+        "uncertain": 0,
+        "rejected": 100
+      },
+      "after": {
+        "correct": 0,
+        "wrong": 0,
+        "uncertain": 0,
+        "rejected": 100
+      },
+      "n": 100
+    },
+    "negative": {
+      "before": {
+        "correct": 0,
+        "wrong": 0,
+        "uncertain": 0,
+        "rejected": 7
+      },
+      "after": {
+        "correct": 0,
+        "wrong": 0,
+        "uncertain": 0,
+        "rejected": 7
+      },
+      "n": 7
+    }
+  },
+  "regressions": [],
+  "new_wrong": [],
+  "changes": [
+    {
+      "dataset": "drive",
+      "filename": "d.jpg",
+      "expected": "D",
+      "before": "uncertain",
+      "after": "correct",
+      "before_label": "R",
+      "after_label": "D",
+      "after_confidence": 0.913550595442454,
+      "recovery_applied": true
+    },
+    {
+      "dataset": "drive",
+      "filename": "g.jpg",
+      "expected": "G",
+      "before": "uncertain",
+      "after": "correct",
+      "before_label": "H",
+      "after_label": "G",
+      "after_confidence": 0.917668342590332,
+      "recovery_applied": true
+    }
+  ],
+  "primary_input_parity": {
+    "drive": {
+      "compared": 46,
+      "pixel_identical": 46
+    },
+    "real73": {
+      "compared": 146,
+      "pixel_identical": 146
+    },
+    "mnist100": {
+      "compared": 0,
+      "pixel_identical": 0
+    },
+    "negative": {
+      "compared": 0,
+      "pixel_identical": 0
+    }
+  },
+  "recovery_input_parity": {
+    "drive": {
+      "compared": 18,
+      "pixel_identical": 18
+    },
+    "real73": {
+      "compared": 0,
+      "pixel_identical": 0
+    },
+    "mnist100": {
+      "compared": 0,
+      "pixel_identical": 0
+    },
+    "negative": {
+      "compared": 0,
+      "pixel_identical": 0
+    }
+  },
+  "model_hashes": {
+    "assets/models/model_float16.tflite": "74f52ab0d6f091b37600ce65c4b7797a102c6e26112b6c2e4824483b168140bc",
+    "assets/models/jz/model_float16.tflite": "e2e34dea6a0938e776b4d14117e64953e0ca9f2d853023c58d3087f320cf74e5"
+  },
+  "mnist_direct_correct": 100,
+  "all_errors_fixed": false,
+  "limits": [
+    "24 Drive images and 73 capture-order-labelled real photos were used during development, not an independent test.",
+    "Only the inconclusive still-photo path changes. Live camera and J/Z model are unchanged.",
+    "Four accepted Drive errors C/O/P/W remain. N still fails the detector.",
+    "The Python training/evaluation module retains primary crop fusion; it does not yet implement this mobile-only photo recovery.",
+    "No model training occurred. This is a preprocessing/policy improvement, not proof of higher generalization accuracy."
+  ]
+}
