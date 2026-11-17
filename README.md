@@ -24,8 +24,14 @@ Video belum melakukan pengenalan. Foto dan Upload belum dapat memprediksi.
 Pilihan model menampilkan SVM + HOG untuk persiapan sambungan berikutnya.
 Ambang penerimaan lama pada UI belum menjadi kontrak untuk skor SVM.
 
-Training, segmentasi tangan, ekstraksi HOG, serta inferensi SVM akan dikerjakan
-pada tahap berikutnya sesuai instruksi. J dan Z belum diimplementasikan.
+Notebook training HOG + SVM tersedia di training/SVM_HOG.
+Backend/inferensi Flutter belum diimplementasikan. J dan Z belum termasuk.
+
+## Training di Google Colab
+
+Upload hanya `training/SVM_HOG/TRAINING_SVM_HOG_COLAB.ipynb` ke Colab,
+lalu pilih Run all. Tidak perlu upload file Python pendamping.
+Panduan dan lokasi hasil ada di [training/SVM_HOG/README.md](training/SVM_HOG/README.md).
 
 ## Menjalankan frontend
 
