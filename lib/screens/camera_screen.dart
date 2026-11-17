@@ -1,19 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/history_item.dart';
 import '../models/sign_prediction.dart';
 import '../services/camera_preview_size.dart';
-import '../services/image_preprocessor.dart';
 import '../services/sign_classifier.dart';
 import '../widgets/full_bleed_camera_preview.dart';
 
@@ -25,7 +21,7 @@ class CameraScreen extends StatefulWidget {
     this.onResultSaved,
     this.onBusyChanged,
     this.topOverlayHeight = 0,
-    this.selectedModel = SignModel.modelC,
+    this.selectedModel = SignModel.svmHog,
     this.onModelChanged,
   });
 
@@ -43,35 +39,18 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  static const _handDetectionInterval = Duration(milliseconds: 320);
-  static const _analysisInterval = Duration(milliseconds: 260);
   static const _minimumConfidence = 0.60;
-  static const _stableFramesRequired = 2;
-  static const _handPresenceWindow = Duration(milliseconds: 800);
-  static const _handDetectionTimeout = Duration(seconds: 2);
   static final _supportedLabels = 'ABCDEFGHIKLMNOPQRSTUVWXY'.split('');
 
   CameraController? _controller;
-  HandLandmarkerPlugin? _handLandmarker;
-  StreamSubscription<List<Hand>>? _handSubscription;
   List<CameraDescription> _cameras = const [];
   int _cameraIndex = 0;
   bool _isInitializing = true;
   bool _isSessionActive = false;
   bool _isTargetAnalysisActive = false;
   bool _isTargetAnalysisStarting = false;
-  bool _isProcessingFrame = false;
-  bool _isHandDetectionPending = false;
   bool _handDetected = false;
   String? _cameraError;
-  DateTime? _lastHandDetectionAt;
-  DateTime? _lastAnalysisAt;
-  DateTime? _lastHandSeenAt;
-  List<Offset>? _latestHandLandmarks;
-  String? _candidateLabel;
-  int _candidateCount = 0;
-  String? _lastCommittedLabel;
-  int _releaseFrameCount = 0;
   final List<String> _sessionLetters = [];
   final List<double> _sessionConfidences = [];
   final List<String> _validationPredictions = [];
@@ -79,12 +58,6 @@ class _CameraScreenState extends State<CameraScreen>
   String? _latestTargetPrediction;
   double? _latestTargetConfidence;
   String? _savedVideoPath;
-  int _analysisGeneration = 0;
-  DateTime? _lastCameraDiagnosticAt;
-  int? _lastFrameWidth;
-  int? _lastFrameHeight;
-  int? _lastFrameRotation;
-  bool? _lastFrameMirrored;
   bool _isStartingSession = false;
   bool _isEndingSession = false;
   late SignModel _selectedModel = widget.selectedModel;
@@ -316,52 +289,6 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
 
-  void _initializeHandLandmarker() {
-    if (_handLandmarker != null) return;
-    _handSubscription?.cancel();
-    _handLandmarker?.dispose();
-    final landmarker = HandLandmarkerPlugin.create(
-      numHands: 1,
-      minHandDetectionConfidence: 0.35,
-      delegate: HandLandmarkerDelegate.cpu,
-    );
-    _handLandmarker = landmarker;
-    _handSubscription = landmarker.landmarkStream.listen(
-      _acceptHandLandmarks,
-      onError: (Object error) {
-        _isHandDetectionPending = false;
-        if (mounted) _showMessage('Hand detector gagal: $error');
-      },
-    );
-  }
-
-  void _acceptHandLandmarks(List<Hand> hands) {
-    _isHandDetectionPending = false;
-    if (!mounted || !_isAnalysisActive) return;
-    final now = DateTime.now();
-    final detectedHands = hands.where((hand) => hand.landmarks.isNotEmpty);
-    final detected = detectedHands.isNotEmpty;
-    if (detected) {
-      _lastHandSeenAt = now;
-      final landmarks = detectedHands.first.landmarks;
-      _latestHandLandmarks = List<Offset>.unmodifiable(
-        landmarks.map(
-          (landmark) =>
-              Offset(landmark.x.clamp(0.0, 1.0), landmark.y.clamp(0.0, 1.0)),
-        ),
-      );
-    }
-    final recentlyDetected =
-        _lastHandSeenAt != null &&
-        now.difference(_lastHandSeenAt!) <= _handPresenceWindow;
-    if (!recentlyDetected) {
-      _resetUnstablePrediction();
-    }
-    if (_handDetected != recentlyDetected) {
-      setState(() => _handDetected = recentlyDetected);
-    }
-  }
-
   Future<void> _switchCamera() async {
     if (_cameras.length < 2 ||
         _isSessionActive ||
@@ -410,7 +337,6 @@ class _CameraScreenState extends State<CameraScreen>
           !identical(controller, _controller)) {
         return;
       }
-      _initializeHandLandmarker();
       setState(() {
         _resetRecognitionState(clearFreeResults: true);
         _savedVideoPath = null;
@@ -510,7 +436,6 @@ class _CameraScreenState extends State<CameraScreen>
           _selectedTarget.isEmpty) {
         return;
       }
-      _initializeHandLandmarker();
       if (resetResults && mounted) {
         setState(() => _resetRecognitionState(clearTargetResults: true));
       }
@@ -559,223 +484,14 @@ class _CameraScreenState extends State<CameraScreen>
       _sessionConfidences.clear();
     }
     if (clearTargetResults) _validationPredictions.clear();
-    _candidateLabel = null;
-    _candidateCount = 0;
-    _lastCommittedLabel = null;
-    _releaseFrameCount = 0;
     _handDetected = false;
-    _lastHandDetectionAt = null;
-    _lastAnalysisAt = null;
-    _lastHandSeenAt = null;
-    _latestHandLandmarks = null;
-    _isHandDetectionPending = false;
     _latestTargetPrediction = null;
     _latestTargetConfidence = null;
-    _analysisGeneration++;
   }
 
   void _onCameraFrame(CameraImage cameraImage) {
-    if (!_isAnalysisActive) return;
-    final controller = _controller;
-    if (controller == null) return;
-    final rotation = ImagePreprocessor.effectivePortraitRotation(
-      frameWidth: cameraImage.width,
-      frameHeight: cameraImage.height,
-      requestedRotationDegrees: _imageRotation(controller),
-    );
-    final now = DateTime.now();
-    if (_isHandDetectionPending &&
-        _lastHandDetectionAt != null &&
-        now.difference(_lastHandDetectionAt!) >= _handDetectionTimeout) {
-      _isHandDetectionPending = false;
-    }
-    if (!_isHandDetectionPending &&
-        (_lastHandDetectionAt == null ||
-            now.difference(_lastHandDetectionAt!) >= _handDetectionInterval)) {
-      _lastHandDetectionAt = now;
-      _isHandDetectionPending = true;
-      try {
-        _handLandmarker?.processFrame(cameraImage, rotation);
-      } catch (error) {
-        _isHandDetectionPending = false;
-        if (mounted) {
-          _showMessage('Hand detector gagal memproses frame: $error');
-        }
-      }
-    }
-    final handIsFresh =
-        _lastHandSeenAt != null &&
-        now.difference(_lastHandSeenAt!) <= _handPresenceWindow;
-    if (!handIsFresh) {
-      _latestHandLandmarks = null;
-      _resetUnstablePrediction();
-      return;
-    }
-    if (_isProcessingFrame) return;
-    if (_lastAnalysisAt != null &&
-        now.difference(_lastAnalysisAt!) < _analysisInterval) {
-      return;
-    }
-    _lastAnalysisAt = now;
-    _isProcessingFrame = true;
-    final analysisGeneration = _analysisGeneration;
-
-    // CameraPreview mirrors the front camera for the user, but the raw image
-    // stream and MediaPipe landmarks are not mirrored. The ASL model was also
-    // trained in that canonical orientation: mirroring a clear C makes it
-    // predict P. Keep the model input unmirrored for both camera lenses.
-    const mirrorForModel = false;
-    _lastFrameWidth = cameraImage.width;
-    _lastFrameHeight = cameraImage.height;
-    _lastFrameRotation = rotation;
-    _lastFrameMirrored = mirrorForModel;
-    final landmarks = _latestHandLandmarks;
-    if (landmarks == null || landmarks.length != 21) {
-      _isProcessingFrame = false;
-      return;
-    }
-    SignClassifier.instance
-        .classifyCameraFrame(
-          cameraImage,
-          rotationDegrees: rotation,
-          mirrorHorizontally: mirrorForModel,
-          normalizedLandmarks: landmarks,
-          model: _selectedModel,
-        )
-        .then((prediction) => _acceptPrediction(prediction, analysisGeneration))
-        .catchError((Object error) {
-          if (mounted) _showMessage('Frame gagal diproses: $error');
-        })
-        .whenComplete(() => _isProcessingFrame = false);
-  }
-
-  void _acceptPrediction(SignPrediction prediction, int analysisGeneration) {
-    if (!mounted ||
-        !_isAnalysisActive ||
-        analysisGeneration != _analysisGeneration) {
-      return;
-    }
-    unawaited(_saveCameraDiagnostic(prediction));
-
-    if (_isTargetAnalysisActive) {
-      setState(() {
-        _latestTargetPrediction = prediction.label;
-        _latestTargetConfidence = prediction.confidence;
-      });
-    }
-
-    if (prediction.confidence < _minimumConfidence) {
-      _candidateLabel = null;
-      _candidateCount = 0;
-      _releaseFrameCount++;
-      return;
-    }
-    if (_lastCommittedLabel != null &&
-        prediction.label != _lastCommittedLabel) {
-      _releaseFrameCount++;
-    }
-    if (_candidateLabel == prediction.label) {
-      _candidateCount++;
-    } else {
-      _candidateLabel = prediction.label;
-      _candidateCount = 1;
-    }
-    final mayRepeatLastLetter =
-        prediction.label == _lastCommittedLabel && _releaseFrameCount >= 2;
-    if (_candidateCount >= _stableFramesRequired) {
-      if (prediction.label != _lastCommittedLabel || mayRepeatLastLetter) {
-        setState(() {
-          if (_isSessionActive) {
-            _sessionLetters.add(prediction.label);
-            _sessionConfidences.add(prediction.confidence);
-          } else if (_isTargetAnalysisActive) {
-            _validationPredictions.add(prediction.label);
-          }
-        });
-        _lastCommittedLabel = prediction.label;
-        _releaseFrameCount = 0;
-      }
-      _candidateCount = 0;
-    }
-  }
-
-  void _resetUnstablePrediction() {
-    _candidateLabel = null;
-    _candidateCount = 0;
-    _releaseFrameCount++;
-  }
-
-  Future<void> _saveCameraDiagnostic(SignPrediction finalPrediction) async {
-    if (!kDebugMode) return;
-    final now = DateTime.now();
-    if (_lastCameraDiagnosticAt != null &&
-        now.difference(_lastCameraDiagnosticAt!) < const Duration(seconds: 1)) {
-      return;
-    }
-    _lastCameraDiagnosticAt = now;
-    try {
-      final classifier = SignClassifier.instance;
-      final contextPng = classifier.lastContextInputPng;
-      if (contextPng == null) return;
-      final tightPng = classifier.lastTightInputPng;
-      final metadata = <String, Object?>{
-        'final_prediction': _predictionJson(finalPrediction),
-        'context_prediction': _predictionJson(classifier.lastContextPrediction),
-        'tight_prediction': _predictionJson(classifier.lastTightPrediction),
-        'landmark_prediction': _predictionJson(
-          classifier.lastLandmarkPrediction,
-        ),
-        'sensor_orientation': _controller?.description.sensorOrientation,
-        'device_orientation': _controller?.value.deviceOrientation.name,
-        'capture_orientation':
-            _controller?.value.lockedCaptureOrientation?.name,
-        'recording_orientation': _controller?.value.recordingOrientation?.name,
-        'preview_width': _controller?.value.previewSize?.width,
-        'preview_height': _controller?.value.previewSize?.height,
-        'native_preview': _controller == null
-            ? null
-            : cameraPreviewGeometry(_controller!).value?.toJson(),
-        'lens_direction': _controller?.description.lensDirection.name,
-        'frame_width': _lastFrameWidth,
-        'frame_height': _lastFrameHeight,
-        'rotation_degrees': _lastFrameRotation,
-        'mirrored': _lastFrameMirrored,
-        'mediapipe_landmarks': _latestHandLandmarks
-            ?.map((point) => <double>[point.dx, point.dy])
-            .toList(growable: false),
-      };
-      final documents = await getApplicationDocumentsDirectory();
-      final directory = Directory(
-        '${documents.path}${Platform.pathSeparator}camera_diagnostic',
-      );
-      await directory.create(recursive: true);
-      await File(
-        '${directory.path}${Platform.pathSeparator}model_input_context.png',
-      ).writeAsBytes(contextPng, flush: true);
-      final tightPath =
-          '${directory.path}${Platform.pathSeparator}model_input_tight.png';
-      if (tightPng != null) {
-        await File(tightPath).writeAsBytes(tightPng, flush: true);
-      } else {
-        final staleTightFile = File(tightPath);
-        if (await staleTightFile.exists()) await staleTightFile.delete();
-      }
-      await File('${directory.path}${Platform.pathSeparator}metadata.json')
-          .writeAsString(
-            const JsonEncoder.withIndent('  ').convert(metadata),
-            flush: true,
-          );
-    } catch (_) {
-      _lastCameraDiagnosticAt = null;
-    }
-  }
-
-  static Map<String, Object?>? _predictionJson(SignPrediction? prediction) {
-    if (prediction == null) return null;
-    return <String, Object?>{
-      'label': prediction.label,
-      'confidence': prediction.confidence,
-    };
+    // Camera UI retained from silva. Inference will be wired to our own backend.
+    // initialize() currently rejects recognition before a stream can start.
   }
 
   Future<void> _endSession() async {
@@ -791,7 +507,6 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() {
       _isEndingSession = true;
       _isSessionActive = false;
-      _analysisGeneration++;
     });
     String? videoPath;
     try {
@@ -815,9 +530,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
     if (mounted) {
       setState(() {
-        _isProcessingFrame = false;
         _handDetected = false;
-        _latestHandLandmarks = null;
         _savedVideoPath = videoPath;
       });
     }
@@ -902,8 +615,6 @@ class _CameraScreenState extends State<CameraScreen>
     widget.onBusyChanged?.call(true);
     try {
       // classifyFile applies EXIF orientation and model-specific resizing.
-      // This plugin exposes MediaPipe only for live CameraImage frames;
-      // a still image is never given stale landmarks from another frame.
       final prediction =
           _photoPrediction ??
           await SignClassifier.instance.classifyFile(
@@ -1129,23 +840,6 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  int _imageRotation(CameraController controller) {
-    const deviceDegrees = <DeviceOrientation, int>{
-      DeviceOrientation.portraitUp: 0,
-      DeviceOrientation.landscapeLeft: 90,
-      DeviceOrientation.portraitDown: 180,
-      DeviceOrientation.landscapeRight: 270,
-    };
-    final captureOrientation =
-        controller.value.lockedCaptureOrientation ??
-        controller.value.deviceOrientation;
-    final device = deviceDegrees[captureOrientation] ?? 0;
-    final sensor = controller.description.sensorOrientation;
-    return controller.description.lensDirection == CameraLensDirection.front
-        ? (sensor + device) % 360
-        : (sensor - device + 360) % 360;
-  }
-
   Future<void> _refreshPreviewSize(CameraController controller) {
     return synchronizeCameraPreviewSize(
       controller,
@@ -1157,7 +851,6 @@ class _CameraScreenState extends State<CameraScreen>
     _cameraGeneration++;
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
-    _analysisGeneration++;
     try {
       await _queueCameraLifecycle(_releaseCamera);
     } catch (error) {
@@ -1179,12 +872,6 @@ class _CameraScreenState extends State<CameraScreen>
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
     _isTargetAnalysisStarting = false;
-    _isHandDetectionPending = false;
-    _analysisGeneration++;
-    await _handSubscription?.cancel();
-    _handSubscription = null;
-    _handLandmarker?.dispose();
-    _handLandmarker = null;
     if (controller == null) return;
     try {
       if (controller.value.isRecordingVideo) {
@@ -2039,9 +1726,7 @@ class _ModelOption extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      model == SignModel.modelC
-                          ? 'Model grayscale camera_robust_v1'
-                          : 'Model RGB MobileNetV2',
+                      'Backend SVM-HOG belum terpasang',
                       style: TextStyle(
                         color: colors.onSurfaceVariant,
                         fontSize: 12,

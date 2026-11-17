@@ -63,6 +63,7 @@ class HistoryItem {
       : '${(confidence! * 100).toStringAsFixed(1)}%';
 
   String get modelLabel => switch (modelId) {
+    'svm_hog' => 'SVM + HOG',
     'camera_robust_v1' => 'Model C',
     'model_e' => 'Model E (MobileNet V2)',
     null || '' => 'Model C',

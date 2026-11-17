@@ -283,7 +283,7 @@ void main() {
       find.byKey(const PageStorageKey('camera')),
     );
     expect(cameraSurface.color, const Color(0xFF090D16));
-    expect(find.text('LatihIsyarat Model C'), findsWidgets);
+    expect(find.text('LatihIsyarat SVM + HOG'), findsWidgets);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
@@ -358,15 +358,15 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('camera-model-selector')));
       await tester.pumpAndSettle();
       expect(find.text('Pilih Model AI'), findsOneWidget);
-      expect(find.text('Model C'), findsWidgets);
-      expect(find.text('Model E'), findsOneWidget);
+      expect(find.text('SVM + HOG'), findsWidgets);
+      expect(find.text('Model E'), findsNothing);
       await tester.tap(
-        find.byKey(const ValueKey('camera-model-option-model_e')),
+        find.byKey(const ValueKey('camera-model-option-svm_hog')),
       );
       await tester.tap(find.byKey(const ValueKey('camera-model-confirm')));
       await tester.pumpAndSettle();
       expect(find.text('Pilih Model AI'), findsNothing);
-      expect(find.text('LatihIsyarat Model E'), findsOneWidget);
+      expect(find.text('LatihIsyarat SVM + HOG'), findsOneWidget);
     }
 
     await tester.pumpWidget(_screen());
@@ -398,20 +398,20 @@ void main() {
     final modelDropdown = find.byKey(const ValueKey('upload-model-dropdown'));
     expect(
       tester.widget<DropdownButton<SignModel>>(modelDropdown).value,
-      SignModel.modelC,
+      SignModel.svmHog,
     );
     await tester.tap(modelDropdown);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model E').last);
+    await tester.tap(find.text('SVM + HOG').last);
     await tester.pumpAndSettle();
     expect(
       tester.widget<DropdownButton<SignModel>>(modelDropdown).value,
-      SignModel.modelE,
+      SignModel.svmHog,
     );
 
     await tester.tap(find.text('Video'));
     await tester.pumpAndSettle();
-    expect(find.text('LatihIsyarat Model E'), findsOneWidget);
+    expect(find.text('LatihIsyarat SVM + HOG'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
@@ -482,7 +482,7 @@ void main() {
   );
 
   testWidgets(
-    'photo detection uses MediaPipe, rejects no hand, and allows retry/retake',
+    'photo reports missing backend, saves no result, and allows retry/retake',
     (tester) async {
       final directory = (await tester.runAsync(() async {
         final directory = await Directory.systemTemp.createTemp(
@@ -495,21 +495,13 @@ void main() {
       final original = File('${directory.path}/temporary.jpg');
       backend.picturePath = original.path;
       var isBusy = false;
-      var handDetectionCalls = 0;
       final savedResults = <HistoryItem>[];
       const channel = MethodChannel('plugins.flutter.io/path_provider');
-      const handChannel = MethodChannel('latih_isyarat/image_hand_landmarker');
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
       messenger.setMockMethodCallHandler(channel, (_) async => directory.path);
-      messenger.setMockMethodCallHandler(handChannel, (call) async {
-        expect(call.method, 'detect');
-        handDetectionCalls++;
-        return [];
-      });
       addTearDown(() async {
         messenger.setMockMethodCallHandler(channel, null);
-        messenger.setMockMethodCallHandler(handChannel, null);
         // Windows can retain the file briefly while Flutter's image codec
         // finishes an asynchronous read after Retake unmounts Image.file.
         for (var attempt = 0; attempt < 10; attempt++) {
@@ -563,8 +555,10 @@ void main() {
         }
         await tester.pump();
         expect(isBusy, isFalse);
-        expect(handDetectionCalls, attempt + 1);
-        expect(find.textContaining('Tangan tidak terdeteksi'), findsOneWidget);
+        expect(
+          find.textContaining(SignClassifier.unavailableMessage),
+          findsOneWidget,
+        );
         expect(savedResults, isEmpty);
         expect(find.text('Deteksi'), findsOneWidget);
         // Dismiss the previous error before checking a second attempt.

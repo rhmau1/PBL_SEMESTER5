@@ -7,14 +7,9 @@ import io.flutter.plugins.camerax.CameraAndroidCameraxPlugin
 import io.flutter.plugins.camerax.LatihIsyaratPreviewBridge
 
 class MainActivity : FlutterActivity() {
-    private var stillImageHandLandmarker: StillImageHandLandmarker? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        stillImageHandLandmarker = StillImageHandLandmarker(
-            applicationContext,
-            flutterEngine.dartExecutor.binaryMessenger,
-        )
         val cameraPlugin =
             flutterEngine.plugins.get(CameraAndroidCameraxPlugin::class.java)
                 as? CameraAndroidCameraxPlugin
@@ -24,9 +19,4 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    override fun cleanUpFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
-        stillImageHandLandmarker?.close()
-        stillImageHandLandmarker = null
-        super.cleanUpFlutterEngine(flutterEngine)
-    }
 }
