@@ -53,6 +53,7 @@ class HistoryItem {
 
   String get sourceLabel => switch (source) {
     'video' => 'Latihan bebas',
+    'motion' => 'Latihan gerakan J/Z',
     'photo' => 'Foto kamera',
     'upload' => 'Upload gambar',
     _ => 'Deteksi sebelumnya',

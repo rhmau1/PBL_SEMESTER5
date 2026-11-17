@@ -2,13 +2,16 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../models/sign_prediction.dart';
 import 'image_preprocessor.dart';
+import 'photo_recovery_preprocessor.dart';
 import 'still_image_hand_detector.dart';
+import 'static_image_prediction_policy.dart';
 
 enum SignModel {
   modelC(
@@ -57,6 +60,12 @@ class SignClassifier {
   static final SignClassifier instance = SignClassifier._();
 
   static const _labelsPath = 'assets/models/labels.json';
+  // Experimental: reduces wrong accepts in the real-photo audit but rejects
+  // many valid standardized inputs. Keep the established orientation default.
+  static const _useOrientationEnsemble = bool.fromEnvironment(
+    'STATIC_ORIENTATION_ENSEMBLE',
+    defaultValue: false,
+  );
   static const _landmarkReferencesPath =
       'assets/models/landmark_references.json';
 
@@ -68,7 +77,17 @@ class SignClassifier {
   img.Image? _lastTightInput;
   SignPrediction? _lastContextPrediction;
   SignPrediction? _lastTightPrediction;
+  SignPrediction? _lastMirroredContextPrediction;
+  SignPrediction? _lastMirroredTightPrediction;
   SignPrediction? _lastLandmarkPrediction;
+  List<Offset> _lastInputLandmarks = const [];
+  bool _lastUsedPaddingRetry = false;
+  SignPrediction? _lastFullImagePrediction;
+  PhotoRecoveryInputs? _lastPhotoRecoveryInputs;
+  SignPrediction? _lastPhotoRecoveryContextPrediction;
+  SignPrediction? _lastPhotoRecoveryTightPrediction;
+  SignPrediction? _lastPhotoRecoveryFullPrediction;
+  bool _lastPhotoRecoveryApplied = false;
 
   bool get isReady => isReadyFor(SignModel.modelC);
   bool isReadyFor(SignModel model) =>
@@ -80,7 +99,36 @@ class SignClassifier {
       _lastTightInput == null ? null : img.encodePng(_lastTightInput!);
   SignPrediction? get lastContextPrediction => _lastContextPrediction;
   SignPrediction? get lastTightPrediction => _lastTightPrediction;
+  SignPrediction? get lastMirroredContextPrediction =>
+      _lastMirroredContextPrediction;
+  SignPrediction? get lastMirroredTightPrediction =>
+      _lastMirroredTightPrediction;
   SignPrediction? get lastLandmarkPrediction => _lastLandmarkPrediction;
+  List<Offset> get lastInputLandmarks => _lastInputLandmarks;
+  bool get usesOrientationEnsemble => _useOrientationEnsemble;
+  bool get lastUsedPaddingRetry => _lastUsedPaddingRetry;
+  SignPrediction? get lastFullImagePrediction => _lastFullImagePrediction;
+  List<int>? get lastPhotoRecoveryContextInputPng =>
+      _lastPhotoRecoveryInputs == null
+      ? null
+      : img.encodePng(_lastPhotoRecoveryInputs!.context);
+  List<int>? get lastPhotoRecoveryTightInputPng =>
+      _lastPhotoRecoveryInputs == null
+      ? null
+      : img.encodePng(_lastPhotoRecoveryInputs!.tight);
+  List<int>? get lastPhotoRecoveryFullInputPng =>
+      _lastPhotoRecoveryInputs == null
+      ? null
+      : img.encodePng(_lastPhotoRecoveryInputs!.full);
+  SignPrediction? get lastPhotoRecoveryContextPrediction =>
+      _lastPhotoRecoveryContextPrediction;
+  SignPrediction? get lastPhotoRecoveryTightPrediction =>
+      _lastPhotoRecoveryTightPrediction;
+  SignPrediction? get lastPhotoRecoveryFullPrediction =>
+      _lastPhotoRecoveryFullPrediction;
+  Rect? get lastPhotoRecoveryBounds =>
+      _lastPhotoRecoveryInputs?.foregroundBounds;
+  bool get lastPhotoRecoveryApplied => _lastPhotoRecoveryApplied;
 
   Future<void> initialize({SignModel model = SignModel.modelC}) {
     if (isReadyFor(model)) return Future<void>.value();
@@ -156,22 +204,63 @@ class SignClassifier {
     String path, {
     SignModel model = SignModel.modelC,
   }) async {
+    _clearImageDiagnostics();
     const detector = StillImageHandDetector();
     final image = await detector.loadImage(path);
-    final landmarks = await detector.detect(image);
+    final detection = await detector.detectWithDetails(image);
+    _lastUsedPaddingRetry = detection.usedPaddingRetry;
     if (!isReadyFor(model)) await initialize(model: model);
-    return _classifyHandCrops(
+    var prediction = await _classifyHandCrops(
       model == SignModel.modelC
           ? ImagePreprocessor.imageToGrayHandCrops(
               image,
-              normalizedLandmarks: landmarks,
+              normalizedLandmarks: detection.landmarks,
             )
           : ImagePreprocessor.imageToRgbHandCrops(
               image,
-              normalizedLandmarks: landmarks,
+              normalizedLandmarks: detection.landmarks,
             ),
       model,
+      true,
     );
+    if (model == SignModel.modelC && detection.usedPaddingRetry) {
+      final full = await _classifyModelImage(
+        ImagePreprocessor.toModelImage(image),
+        model,
+      );
+      _lastFullImagePrediction = full;
+      prediction = StaticImagePredictionPolicy.confirmRecoveredHand(
+        _labels,
+        prediction,
+        full,
+      );
+    }
+    if (model != SignModel.modelC || prediction.confidence >= 0.60) {
+      return prediction;
+    }
+    final recovery = await compute(
+      PhotoRecoveryPreprocessor.prepare,
+      PhotoRecoveryRequest(image, detection.landmarks),
+    );
+    if (recovery == null) return prediction;
+    _lastPhotoRecoveryInputs = recovery;
+    final full =
+        _lastFullImagePrediction ??
+        await _classifyModelImage(recovery.full, model);
+    final context = await _classifyModelImage(recovery.context, model);
+    final tight = await _classifyModelImage(recovery.tight, model);
+    _lastPhotoRecoveryFullPrediction = full;
+    _lastPhotoRecoveryContextPrediction = context;
+    _lastPhotoRecoveryTightPrediction = tight;
+    final recovered = StaticImagePredictionPolicy.recoverUncertainPhoto(
+      _labels,
+      primary: prediction,
+      full: full,
+      context: context,
+      tight: tight,
+    );
+    _lastPhotoRecoveryApplied = !identical(recovered, prediction);
+    return recovered;
   }
 
   Future<SignPrediction> classifyUploadFile(
@@ -200,13 +289,15 @@ class SignClassifier {
             mirrorHorizontally: mirrorHorizontally,
             normalizedLandmarks: normalizedLandmarks,
           );
-    return _classifyHandCrops(crops, model);
+    return _classifyHandCrops(crops, model, false);
   }
 
   Future<SignPrediction> _classifyHandCrops(
     CameraFrameCrops crops,
     SignModel model,
+    bool verifyBothCrops,
   ) async {
+    _clearPhotoRecoveryDiagnostics();
     final contextInput = _toModelImage(crops.context, model);
     final contextPrediction = await _classifyModelImage(contextInput, model);
     final landmarkPrediction = _classifyLandmarks(crops.orientedLandmarks);
@@ -214,21 +305,42 @@ class SignClassifier {
     _lastTightInput = null;
     _lastContextPrediction = contextPrediction;
     _lastTightPrediction = null;
+    _lastMirroredContextPrediction = null;
+    _lastMirroredTightPrediction = null;
     _lastLandmarkPrediction = landmarkPrediction;
-    // The context crop is adaptive now, so a very strong result can return
-    // immediately and keep inference responsive on older phones.
-    if (contextPrediction.confidence >= 0.90) return contextPrediction;
+    _lastInputLandmarks = List<Offset>.unmodifiable(crops.orientedLandmarks);
+    var context = contextPrediction;
+    if (_useOrientationEnsemble) {
+      final mirrored = await _classifyModelImage(
+        img.flipHorizontal(img.Image.from(contextInput)),
+        model,
+      );
+      _lastMirroredContextPrediction = mirrored;
+      context = StaticImagePredictionPolicy.averageOrientations(
+        _labels,
+        contextPrediction,
+        mirrored,
+      );
+    }
+    if (!verifyBothCrops && context.confidence >= 0.90) return context;
 
     final tightInput = _lastTightInput = _toModelImage(crops.tight, model);
     final tightPrediction = await _classifyModelImage(tightInput, model);
     _lastTightPrediction = tightPrediction;
-    final blended = _blendImagePredictions(contextPrediction, tightPrediction);
-    if (tightPrediction.label == contextPrediction.label) return blended;
-
-    // Disagreement between two valid hand crops is uncertainty, even if one
-    // softmax output is overconfident. Keep it below the UI acceptance limit
-    // so an unstable crop is not committed as a letter.
-    return _capPredictionConfidence(blended, 0.59);
+    var tight = tightPrediction;
+    if (_useOrientationEnsemble) {
+      final mirrored = await _classifyModelImage(
+        img.flipHorizontal(img.Image.from(_lastTightInput!)),
+        model,
+      );
+      _lastMirroredTightPrediction = mirrored;
+      tight = StaticImagePredictionPolicy.averageOrientations(
+        _labels,
+        tightPrediction,
+        mirrored,
+      );
+    }
+    return StaticImagePredictionPolicy.combineCrops(_labels, context, tight);
   }
 
   Future<SignPrediction> classifyImage(
@@ -278,17 +390,7 @@ class SignClassifier {
   }
 
   SignPrediction _predictionFromScores(List<double> scores) {
-    var bestIndex = 0;
-    for (var index = 1; index < scores.length; index++) {
-      if (scores[index] > scores[bestIndex]) {
-        bestIndex = index;
-      }
-    }
-    return SignPrediction(
-      label: _labels[bestIndex],
-      confidence: scores[bestIndex],
-      scores: scores,
-    );
+    return StaticImagePredictionPolicy.fromScores(_labels, scores);
   }
 
   SignPrediction? _classifyLandmarks(List<Offset> landmarks) {
@@ -346,36 +448,6 @@ class SignClassifier {
     return sum / a.length;
   }
 
-  SignPrediction _blendImagePredictions(
-    SignPrediction contextPrediction,
-    SignPrediction tightPrediction,
-  ) {
-    return _predictionFromScores(
-      List<double>.generate(
-        _labels.length,
-        (index) =>
-            contextPrediction.scores[index] * 0.55 +
-            tightPrediction.scores[index] * 0.45,
-        growable: false,
-      ),
-    );
-  }
-
-  SignPrediction _capPredictionConfidence(
-    SignPrediction prediction,
-    double maximumConfidence,
-  ) {
-    if (prediction.confidence <= maximumConfidence) return prediction;
-    final uniform = 1 / _labels.length;
-    final scale =
-        (maximumConfidence - uniform) / (prediction.confidence - uniform);
-    return _predictionFromScores(
-      prediction.scores
-          .map((score) => uniform + (score - uniform) * scale)
-          .toList(growable: false),
-    );
-  }
-
   Future<void> close() async {
     for (final model in _loadedModels.values) {
       await model.isolateInterpreter.close();
@@ -383,11 +455,29 @@ class SignClassifier {
     }
     _loadedModels.clear();
     _initializations.clear();
+    _clearImageDiagnostics();
+  }
+
+  void _clearImageDiagnostics() {
+    _clearPhotoRecoveryDiagnostics();
+    _lastUsedPaddingRetry = false;
+    _lastFullImagePrediction = null;
     _lastContextInput = null;
     _lastTightInput = null;
     _lastContextPrediction = null;
     _lastTightPrediction = null;
+    _lastMirroredContextPrediction = null;
+    _lastMirroredTightPrediction = null;
     _lastLandmarkPrediction = null;
+    _lastInputLandmarks = const [];
+  }
+
+  void _clearPhotoRecoveryDiagnostics() {
+    _lastPhotoRecoveryInputs = null;
+    _lastPhotoRecoveryContextPrediction = null;
+    _lastPhotoRecoveryTightPrediction = null;
+    _lastPhotoRecoveryFullPrediction = null;
+    _lastPhotoRecoveryApplied = false;
   }
 
   static bool _sameShape(List<int> actual, List<int> expected) {

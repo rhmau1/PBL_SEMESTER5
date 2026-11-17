@@ -214,6 +214,16 @@ void main() {
     final videoModel = tester.getRect(
       find.byKey(const ValueKey('camera-model-selector')),
     );
+    final videoFrame = tester.getRect(
+      find.byKey(const ValueKey('camera-detection-frame')),
+    );
+    final videoAction = tester.widget<FilledButton>(
+      find.descendant(
+        of: find.byKey(const ValueKey('camera-primary-action')),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    final videoActionColor = videoAction.style?.backgroundColor?.resolve({});
     await tester.pumpWidget(_screen(photoMode: true, topOverlayHeight: 52));
     final photoModel = tester.getRect(
       find.byKey(const ValueKey('camera-model-selector')),
@@ -224,10 +234,19 @@ void main() {
     final photoFrame = tester.getRect(
       find.byKey(const ValueKey('camera-detection-frame')),
     );
+    final photoAction = tester.widget<FilledButton>(
+      find.descendant(
+        of: find.byKey(const ValueKey('photo-primary-action')),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    final photoActionColor = photoAction.style?.backgroundColor?.resolve({});
 
     expect(photoModel.top, closeTo(videoModel.top, 1));
     expect(photoToggle.center.dy, closeTo(photoModel.center.dy, 1));
     expect(photoFrame.top, greaterThan(photoModel.bottom));
+    expect(photoFrame.height, closeTo(videoFrame.height, 4));
+    expect(photoActionColor, videoActionColor);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
@@ -247,6 +266,7 @@ void main() {
       find.byKey(const ValueKey('camera-detection-frame')),
       findsOneWidget,
     );
+    expect(find.byType(SingleChildScrollView), findsNothing);
     expect(find.byKey(const ValueKey('camera-controls')), findsOneWidget);
     expect(find.byKey(const ValueKey('camera-model-selector')), findsOneWidget);
     expect(find.byKey(const ValueKey('camera-live-results')), findsNothing);
@@ -262,7 +282,7 @@ void main() {
     final action = tester.getRect(
       find.byKey(const ValueKey('camera-primary-action')),
     );
-    expect(frame.height, greaterThan(200));
+    expect(frame.height, greaterThan(300));
     expect(cameraToggle.center.dy, closeTo(modelCard.center.dy, 1));
     expect(modelCard.left, lessThan(cameraToggle.left));
     expect(frame.top, greaterThan(modelCard.bottom));
@@ -563,7 +583,8 @@ void main() {
         }
         await tester.pump();
         expect(isBusy, isFalse);
-        expect(handDetectionCalls, attempt + 1);
+        // One original detection plus one padded retry for an empty result.
+        expect(handDetectionCalls, (attempt + 1) * 2);
         expect(find.textContaining('Tangan tidak terdeteksi'), findsOneWidget);
         expect(savedResults, isEmpty);
         expect(find.text('Deteksi'), findsOneWidget);

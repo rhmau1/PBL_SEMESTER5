@@ -1,12 +1,6 @@
 import 'gamification_progress.dart';
 
-enum BadgeTier {
-  keepLearning,
-  good,
-  excellent,
-  perfect,
-  impossible,
-}
+enum BadgeTier { keepLearning, good, excellent, perfect, impossible }
 
 class BadgeItem {
   final BadgeTier tier;
@@ -46,12 +40,12 @@ class BadgeItem {
         BadgeTier.keepLearning => 'First lesson completed',
         BadgeTier.good => '5-letter milestone reached',
         BadgeTier.excellent => '15-letter milestone reached',
-        BadgeTier.perfect => 'All 24 letters mastered',
-        BadgeTier.impossible => 'All letters + 7-day streak achieved',
+        BadgeTier.perfect => '24-letter milestone reached',
+        BadgeTier.impossible => '24 letters + 7-day streak achieved',
       };
     }
 
-    final letterCount = progress.practicedLetters.length;
+    final letterCount = progress.practicedLetters.length.clamp(0, 24);
     return switch (tier) {
       BadgeTier.keepLearning => '0 / 1 session completed',
       BadgeTier.good => '$letterCount / 5 letters · ${5 - letterCount} to go',
@@ -79,8 +73,7 @@ class BadgeItem {
       id: 'good',
       title: 'Good',
       requirement: 'Learn 5 alphabet letters.',
-      description:
-          'Hebat! Kamu sudah mencoba 5 huruf alfabet berbeda.',
+      description: 'Hebat! Kamu sudah mencoba 5 huruf alfabet berbeda.',
       assetPath: 'assets/badges/good.svg',
       targetLetters: 5,
     ),
@@ -89,8 +82,7 @@ class BadgeItem {
       id: 'excellent',
       title: 'Excellent',
       requirement: 'Learn 15 alphabet letters.',
-      description:
-          'Luar biasa! Kamu telah mempelajari 15 huruf alfabet. Itu 15 cara baru untuk terkoneksi.',
+      description: 'Luar biasa! Kamu telah mempelajari 15 huruf alfabet. Itu 15 cara baru untuk terkoneksi.',
       assetPath: 'assets/badges/excellent.svg',
       targetLetters: 15,
     ),
@@ -98,9 +90,9 @@ class BadgeItem {
       tier: BadgeTier.perfect,
       id: 'perfect',
       title: 'Perfect',
-      requirement: 'Learn all 24 alphabet letters.',
+      requirement: 'Learn at least 24 alphabet letters.',
       description:
-          'Sempurna! Kamu telah melatih seluruh 24 huruf yang tersedia pada sistem.',
+          'Kamu telah melatih sedikitnya 24 huruf alfabet yang berbeda.',
       assetPath: 'assets/badges/perfect.svg',
       targetLetters: 24,
     ),
@@ -108,9 +100,8 @@ class BadgeItem {
       tier: BadgeTier.impossible,
       id: 'impossible',
       title: 'Impossible',
-      requirement: 'Learn all 24 letters + reach a 7-day streak.',
-      description:
-          'Pencapaian legendaris! Kamu menguasai seluruh huruf dan konsisten berlatih selama 7 hari.',
+      requirement: 'Learn at least 24 letters + reach a 7-day streak.',
+      description: 'Kamu telah melatih sedikitnya 24 huruf berbeda dan konsisten berlatih selama 7 hari.',
       assetPath: 'assets/badges/impossible.svg',
       targetLetters: 24,
       targetStreak: 7,

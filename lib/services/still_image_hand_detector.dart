@@ -16,6 +16,16 @@ class HandImageException implements Exception {
 }
 
 /// MediaPipe IMAGE mode, independent of the camera's LIVE_STREAM detector.
+class StillImageHandDetection {
+  const StillImageHandDetection({
+    required this.landmarks,
+    required this.usedPaddingRetry,
+  });
+
+  final List<Offset> landmarks;
+  final bool usedPaddingRetry;
+}
+
 class StillImageHandDetector {
   const StillImageHandDetector();
 
@@ -23,13 +33,15 @@ class StillImageHandDetector {
 
   Future<img.Image> loadImage(String path) => compute(_decodeStillImage, path);
 
-  Future<List<Offset>> detect(img.Image image) async {
-    final Uint8List bytes = img.encodeJpg(image, quality: 95);
-    final List<dynamic>? hands;
+  Future<List<Offset>> detect(img.Image image) async =>
+      (await detectWithDetails(image)).landmarks;
+
+  Future<List<dynamic>> _detectImage(img.Image image) async {
     try {
-      hands = await _channel.invokeListMethod<dynamic>('detect', {
-        'bytes': bytes,
-      });
+      return await _channel.invokeListMethod<dynamic>('detect', {
+            'bytes': img.encodeJpg(image, quality: 95),
+          }) ??
+          const [];
     } on MissingPluginException {
       throw const HandImageException(
         'Deteksi tangan belum tersedia. Hentikan aplikasi lalu jalankan ulang.',
@@ -39,7 +51,29 @@ class StillImageHandDetector {
         'MediaPipe gagal memproses gambar. Coba gambar lain.',
       );
     }
-    if (hands == null || hands.isEmpty) {
+  }
+
+  Future<StillImageHandDetection> detectWithDetails(img.Image image) async {
+    var hands = await _detectImage(image);
+    var usedPaddingRetry = false;
+    var border = 0;
+    if (hands.isEmpty) {
+      // Keep every original pixel. Retry once at another detector scale without
+      // lowering confidence or cutting off fingertips. CNN still sees source.
+      border = ((image.width > image.height ? image.width : image.height) / 8)
+          .round()
+          .clamp(1, 128);
+      final padded = img.Image(
+        width: image.width + 2 * border,
+        height: image.height + 2 * border,
+        numChannels: 3,
+      );
+      img.fill(padded, color: img.ColorRgb8(255, 255, 255));
+      img.compositeImage(padded, image, dstX: border, dstY: border);
+      hands = await _detectImage(padded);
+      usedPaddingRetry = true;
+    }
+    if (hands.isEmpty) {
       throw const HandImageException(
         'Tangan tidak terdeteksi. Gunakan foto dengan seluruh jari terlihat.',
       );
@@ -53,7 +87,7 @@ class StillImageHandDetector {
     if (points.length != 21) {
       throw const HandImageException('Posisi tangan tidak dapat dibaca.');
     }
-    return List<Offset>.unmodifiable(
+    final landmarks = List<Offset>.unmodifiable(
       points.map((point) {
         final coordinates = point as List<dynamic>;
         final x = (coordinates[0] as num).toDouble();
@@ -61,8 +95,24 @@ class StillImageHandDetector {
         if (!x.isFinite || !y.isFinite) {
           throw const HandImageException('Posisi tangan tidak dapat dibaca.');
         }
-        return Offset(x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
+        final sourceX = usedPaddingRetry
+            ? (x * (image.width + 2 * border) - border) / image.width
+            : x;
+        final sourceY = usedPaddingRetry
+            ? (y * (image.height + 2 * border) - border) / image.height
+            : y;
+        // A detection on the artificial border is not a source hand. Do not
+        // clamp such points into a fake hand at the image edge.
+        if (usedPaddingRetry &&
+            (sourceX < 0 || sourceX > 1 || sourceY < 0 || sourceY > 1)) {
+          throw const HandImageException('Posisi tangan tidak dapat dibaca.');
+        }
+        return Offset(sourceX.clamp(0.0, 1.0), sourceY.clamp(0.0, 1.0));
       }),
+    );
+    return StillImageHandDetection(
+      landmarks: landmarks,
+      usedPaddingRetry: usedPaddingRetry,
     );
   }
 }

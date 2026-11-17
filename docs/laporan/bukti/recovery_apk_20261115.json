@@ -1,0 +1,7 @@
+{
+  "normal_apk_sha256": "96508466da0bf7051b328154d2f9ee99ff06800323f4c418d63851ac78b2c711",
+  "normal_apk_size_bytes": 137082946,
+  "normal_entrypoint_verified": true,
+  "recovery_code_present": true,
+  "embedded_models_match_repo": true
+}
