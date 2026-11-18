@@ -213,3 +213,40 @@ Backend foto mencoba meratakan pencahayaan ketika variasi intensitas tepi melebi
 Tabel membandingkan 200 input lokal dengan koreksi dimatikan dan dinyalakan. Kondisi gradien dan bayangan berasal dari transformasi terhadap 24 foto Drive yang sama.
 
 Pada Vivo 1918, build QA commit `13c689f` menghasilkan **13 benar, 8 salah, dan 3 ragu** pada foto asli. Uji Vivo pada 24 turunan gradien horizontal menghasilkan **12 benar, 9 salah, dan 3 ragu**. Kedua batch dijalankan dari tombol **Uji foto Drive**. Pemrosesan rata-rata sekitar 523 ms per foto asli dan 447 ms per foto gradien pada sesi tersebut.
+
+## 17. Lima iterasi perbaikan foto
+
+Set pembanding berisi 24 foto Drive asli dan tujuh turunan per foto, yaitu rotasi kiri dan kanan 8°, pengurangan intensitas, blur, dan tiga arah gradien. Ada 192 input dari 24 foto sumber. Bayangan dua zona, tujuh kontrol negatif, dan 73 foto pribadi dilaporkan terpisah. Pemilihan perubahan memakai set pengembangan yang sama. Bobot SVM dan konfigurasi HOG sama dalam semua perbandingan.
+
+| Iterasi | Perubahan yang diuji | Drive asli (benar / salah / ragu) | 192 input (benar / salah / ragu) | Keputusan |
+| --- | --- | ---: | ---: | --- |
+| Awal | Empat tampilan crop dan aturan persetujuan yang sudah dipakai | 13 / 8 / 3 | 97 / 73 / 22 | Pembanding |
+| 1 | Ratakan latar di luar komponen utama dengan mask | 13 / 8 / 3 | 95 / 76 / 21 | Batalkan. Foto asli seri dan hasil gabungan turun |
+| 2 | Regangkan kontras crop menurut persentil 1 dan 99 | 11 / 11 / 2 | 91 / 88 / 13 | Batalkan. Lanjutkan iterasi pencahayaan dengan koreksi bayangan dua zona sebelum segmentasi |
+| 3 | Ubah ukuran antara cek foto dari 40 ke 64 piksel | 12 / 9 / 3 | 95 / 75 / 22 | Batalkan. Q berubah dari benar menjadi M |
+| 4 | Coba ulang hasil ragu dengan dua rotasi crop ±6° | 13 / 9 / 2 | 97 / 77 / 18 | Batalkan. O diterima sebagai M dan jumlah benar tetap |
+| 5 | Jumlahkan skor dari empat tampilan dan minta persetujuan minimal dua tampilan | 12 / 8 / 4 | 96 / 80 / 16 | Batalkan. Q menjadi ragu dan P diterima sebagai N |
+
+### Koreksi yang diterapkan
+
+Jika koreksi cahaya bertahap gagal, backend foto dapat mengoreksi bayangan dengan batas lurus yang membagi foto menjadi dua zona. Backend membandingkan kecerahan di empat sudut, mencari letak perubahan pada dua tepi yang berlawanan, lalu menerima perkiraan pencahayaan hanya jika posisi batas dan pola intensitas tepi konsisten. Piksel diratakan menurut zona masing-masing sebelum segmentasi memilih komponen tangan. Kamera live memakai jalur yang sama seperti sebelumnya.
+
+| Pengujian | Sebelum (benar / salah / ragu / ditolak sebelum SVM) | Sesudah (benar / salah / ragu / ditolak sebelum SVM) |
+| --- | ---: | ---: |
+| 24 foto Drive asli, lokal dan Vivo 1918 | 13 / 8 / 3 / 0 | 13 / 8 / 3 / 0 |
+| 24 foto turunan dengan batas bayangan vertikal di tengah, lokal | 0 / 0 / 0 / 24 | 13 / 9 / 2 / 0 |
+| Set bayangan vertikal di tengah, Vivo 1918 | Belum diuji pada versi awal di Vivo | 13 / 9 / 2 / 0 |
+| 24 foto turunan dengan batas bayangan horizontal di 43% tinggi, lokal | — | 13 / 9 / 2 / 0 |
+| 24 foto turunan dengan batas bayangan vertikal di 37% lebar, lokal | — | 11 / 12 / 1 / 0 |
+| 7 kontrol negatif, lokal | 0 / 0 / 0 / 7 | 0 / 0 / 0 / 7 |
+| 73 foto pribadi, lokal | 0 / 0 / 0 / 73 | 0 / 0 / 0 / 73 |
+
+Hasil per foto pada 192 input pembanding tetap sama setelah koreksi. File yang dipakai di Vivo dicocokkan berdasarkan checksum. Pengukuran sebelum dan sesudah untuk foto asli memakai aplikasi LatihIsyarat QA. `flutter analyze --no-pub` bersih dan 123 tes Flutter lulus.
+
+### Letak kegagalan yang tersisa
+
+- **Segmentasi latar.** Seluruh 73 foto pribadi berhenti pada pemeriksaan tepi sebelum HOG dan inferensi. Koreksi bayangan hanya menangani pola cahaya yang bentuknya sesuai dengan perkiraan di atas.
+- **Citra dan klasifikasi.** Semua 24 foto Drive asli masuk ke SVM. Kesalahan yang diterima adalah C→E, D→V, K→U, M→O, N→O, R→V, U→V, dan X→D. Pada tujuh dari delapan foto itu, huruf target tidak menjadi prediksi teratas pada satu pun dari empat tampilan crop. Foto N mendapat satu prediksi N dan tiga prediksi O. Percobaan ini memperlihatkan pengaruh tampilan crop. Kontribusi ketepatan crop dan perbedaan data training belum bisa dipisahkan sepenuhnya.
+- **Aturan penerimaan.** O, P, dan T tetap ragu. Huruf target juga absen dari prediksi teratas pada empat tampilan standar untuk ketiganya. Melonggarkan keputusan hanya menambah kesalahan pada beberapa foto. Pada uji bayangan di Vivo, P justru diterima sebagai N, sehingga pemulihan segmentasi perlu dinilai bersama jumlah salah yang diterima.
+
+Pengukuran berikutnya perlu memakai foto berlabel dari orang dan sesi baru. Untuk memperbaiki dua tahap yang tersisa, ukur lokalisasi tangan pada latar ramai dan uji ulang SVM pada crop tangan terverifikasi. Jika huruf tetap salah pada crop yang bagus, diperlukan data training yang lebih mewakili foto kamera untuk memperbaiki SVM-HOG.
