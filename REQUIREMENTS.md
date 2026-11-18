@@ -19,7 +19,7 @@ folder project. Tidak perlu menyimpan SDK, cache dependency, atau APK di Git.
 
 Gunakan versi Flutter yang sama untuk hasil build yang konsisten. Workflow CI
 di `.github/workflows/ci.yml` memakai Flutter 3.47.5. Project ditujukan untuk
-Android. Branch RAMA-SVM-HOG berisi frontend saja, tanpa backend ML.
+Android. Branch RAMA-SVM-HOG menjalankan inferensi SVM-HOG langsung di perangkat.
 
 ## Instalasi
 
@@ -84,7 +84,7 @@ Versi berikut berasal dari `pubspec.lock` hasil merge:
 | flutter_riverpod | 2.6.1 | State aplikasi dan riwayat |
 
 Package tidak perlu diinstal satu per satu. `flutter pub get` memasang
-dependency frontend. Model CNN dan MediaPipe tidak digunakan di branch ini.
+dependency Flutter. Aset inferensi SVM-HOG sudah tersedia di repo.
 
 ## USB dan menjalankan di HP
 
@@ -158,8 +158,8 @@ debug key; siapkan signing produksi sebelum distribusi resmi.
   model HP dan tahap terjadinya masalah untuk validasi.
 
 Jangan mengirim `build`, `.dart_tool`, `android/local.properties`, SDK, atau
-JDK ke Git. Model TFLite, labels, metadata, referensi landmark, foto kamus,
-source native bridge, dan `pubspec.lock` harus tetap tersedia untuk tim.
+JDK ke Git. Pertahankan aset SVM-HOG, label, metadata, foto kamus,
+source native bridge, dan `pubspec.lock` agar tim dapat menjalankan aplikasi.
 
 ## Lampiran opsional: Windows
 

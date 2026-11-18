@@ -125,8 +125,9 @@ class SvmHogModel {
   // skimage HOG: signed central differences, unsigned angles, and L2-Hys.
   static Float32List hog(Uint8List pixels) {
     const size = 64, cells = 8, bins = 9;
-    if (pixels.length != size * size)
+    if (pixels.length != size * size) {
       throw ArgumentError('Gambar HOG harus 64x64.');
+    }
     final values = Float32List.fromList(
       pixels.map((pixel) => math.sqrt(pixel / 255)).toList(),
     );

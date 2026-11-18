@@ -1,5 +1,24 @@
 # PRD Integrasi Model SVM-HOG ke Flutter
 
+## Status implementasi
+
+- Aset inferensi `assets/models/svm_hog.bin.gz` berukuran 63.615.075 byte
+  (60,67 MiB). Ekspor float32 berasal dari Joblib model 07 dan dimuat sekali ke
+  isolate Dart. HOG dan inferensi dicocokkan dengan scikit-learn 1.6.1 pada
+  43 input grayscale 64×64 dari bukti MNIST. Seluruh label cocok.
+- Foto dan Upload memakai orientasi EXIF, segmentasi foreground klasik,
+  dua crop persegi, grayscale, resize 28×28 lalu 64×64, dan HOG.
+  Hasil diterima jika dua crop memilih huruf yang sama. Skor keputusan
+  SVM tersedia tanpa persentase keyakinan pada antarmuka dan riwayat.
+- Video memakai jalur yang sama dari bidang luma kamera. Sampling maksimal
+  empat kali per detik dan huruf diterima setelah tiga sampel yang konsisten.
+  Mode bebas menampilkan hasil setelah Akhiri dan mode target berjalan otomatis.
+- Uji diagnostik lokal pada 24 foto Drive berlatar putih menghasilkan 8 benar,
+  10 salah, dan 6 ditolak karena dua crop berbeda. Akurasi seluruh input
+  33,33%. Foto ini dipakai untuk pengembangan dan belum mengukur akurasi
+  penggunaan kamera umum. Ulangi uji dengan pose dan pengguna baru sebelum
+  menyatakan model siap produksi.
+
 ## 1. Tujuan
 
 Menghubungkan model SVM-HOG augmented ke frontend Flutter yang berasal dari branch Silva. Integrasi mencakup mode Foto, Upload satu gambar, Upload banyak gambar, dan alur kamera yang sudah tersedia.
