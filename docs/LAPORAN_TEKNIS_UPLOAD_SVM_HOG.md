@@ -80,7 +80,7 @@ Untuk 24 kelas, LIBSVM menggunakan **one-versus-one**, yaitu **276 pasangan kela
 
 ## 10. Ubah hasil inferensi menjadi hasil di layar
 
-Backend menghasilkan `SvmHogPrediction` dengan tiga informasi. `label` adalah prediksi crop pertama, `scores` adalah 24 skor keputusan, dan `accepted` bernilai benar jika kedua crop sepakat.
+Backend menghasilkan `SvmHogPrediction` dengan tiga informasi. `label` adalah prediksi dari jalur keputusan yang dipilih, `scores` adalah 24 skor keputusan, dan `accepted` menandai kesepakatan dalam pasangan input. Untuk build awal yang tercatat di bagian 12, pasangan ini adalah dua crop standar. Bagian 15 menjelaskan perubahan pada build terbaru.
 
 | Kondisi | Keluaran layar QA |
 | --- | --- |
@@ -178,3 +178,20 @@ Pada input 28×28, crop yang lebih rapat memberi tangan lebih banyak piksel. HOG
 C, K, dan U tidak mencapai label target pada konfigurasi yang dicoba. Temuan ini mengarahkan pemeriksaan berikutnya ke kesesuaian fitur HOG antara foto asli dan data training. Pada foto lain di luar set Drive, 73 dari 73 berkas lolos pembacaan gambar lalu berhenti di pemeriksaan variasi tepi sebelum crop dan inferensi. Artinya, percobaan ini memperbaiki framing pada foto berlatar polos. Separasi tangan dari latar ramai tetap menjadi batas penggunaan backend saat ini.
 
 Ukuran crop dipilih dari hasil eksplorasi pada set Drive, sehingga 45,83% adalah angka pengembangan. Konfigurasi 40×40 dengan inversi menghasilkan 12 benar, 10 salah yang lolos, dan 2 belum yakin. Percobaan lanjutan memakai 28×28 dan crop rapat karena perubahan ini menguji satu faktor dan menurunkan jumlah prediksi salah yang lolos. Pengukuran berikutnya perlu memakai foto berlabel yang belum dipakai untuk memilih konfigurasi, termasuk pose dari beberapa orang dan sesi. Jalankan probe dengan opsi `--wide` untuk mengulang nilai awal.
+
+## 15. Perbandingan variasi input
+
+Backend foto menguji dua variasi dari crop 1,05×. Variasi pertama membalik intensitas piksel dengan rumus `255 - I` pada citra 64×64. Variasi kedua memakai resolusi antara 40×40 sebelum resize ke 64×64. Jika kedua prediksi sepakat, backend mengembalikan huruf tersebut. Jika berbeda, backend memakai aturan kesepakatan dua crop standar. HOG, scaler, dan parameter SVM yang digunakan sama pada seluruh variasi.
+
+| Kondisi | Sebelumnya (benar / salah / ragu) | Terbaru (benar / salah / ragu) |
+| --- | ---: | ---: |
+| 24 foto asli | 11 / 9 / 4 | 13 / 8 / 3 |
+| Rotasi sintetis −8° | 9 / 14 / 1 | 10 / 14 / 0 |
+| Rotasi sintetis +8° | 13 / 9 / 2 | 13 / 9 / 2 |
+| Intensitas diturunkan | 11 / 7 / 6 | 12 / 7 / 5 |
+| Blur | 11 / 8 / 5 | 13 / 8 / 3 |
+| Total | 55 / 47 / 18 | 61 / 46 / 13 |
+
+Pada foto asli, hasil Q berubah dari M ke Q dan S berubah dari “Belum yakin” ke S. Hasil ini diperoleh di komputer dari 24 foto Drive yang juga digunakan untuk memilih aturan. Empat variasi sintetis per foto memberikan 120 input, dengan 24 foto sumber. Jalankan probe dengan `--baseline` untuk pembanding dua crop standar atau tanpa opsi untuk aturan terbaru.
+
+Segmentasi latar polos tetap menentukan apakah citra masuk ke SVM. Pada uji sebelumnya, pemeriksaan variasi tepi menolak semua 73 foto pribadi. Evaluasi crop manual pada set tersebut menghasilkan dua huruf benar, 56 salah, dan 15 ragu. Pengujian itu menjadi dasar untuk memisahkan masalah segmentasi dan generalisasi model pada foto asli.

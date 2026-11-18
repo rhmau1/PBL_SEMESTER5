@@ -7,9 +7,10 @@
   isolate Dart. HOG dan inferensi dicocokkan dengan scikit-learn 1.6.1 pada
   43 input grayscale 64×64 dari bukti MNIST. Seluruh label cocok.
 - Backend foto memakai orientasi EXIF, segmentasi foreground klasik,
-  dua crop persegi, grayscale, resize 28×28 lalu 64×64, dan HOG.
-  Hasil diterima jika dua crop memilih huruf yang sama. Skor keputusan
-  SVM tersedia sebagai nilai keputusan mentah.
+  dua crop persegi, grayscale, dan HOG. Dua variasi crop rapat memakai inversi
+  intensitas atau resize antara 40×40. Jika keduanya sepakat, gunakan hasilnya.
+  Jika berbeda, gunakan kesepakatan kedua crop standar. Lihat
+  [laporan uji foto](LAPORAN_TEKNIS_UPLOAD_SVM_HOG.md#15-perbandingan-variasi-input).
 - Backend frame menerima bidang luma kamera dan memakai jalur crop serta
   inferensi yang sama. Tim frontend memegang sambungan layar dan sesi video.
 - Uji diagnostik lokal pada 24 foto Drive berlatar putih menghasilkan 8 benar,
@@ -78,8 +79,9 @@ valid menghasilkan `FormatException`.
 
 ### `SvmHogPrediction`
 
-- `label` adalah huruf dari crop pertama.
-- `accepted` bernilai benar saat kedua crop memilih huruf yang sama.
+- `label` adalah huruf dari jalur keputusan yang dipilih.
+- `accepted` menandai bahwa pasangan variasi foto atau pasangan crop standar
+  memilih huruf yang sama.
 - `scores` berisi 24 skor keputusan dalam urutan label di bagian 7.
   Persentase keyakinan memerlukan kalibrasi tersendiri.
 - Gunakan `SvmHogClassifier.modelId` untuk identitas model pada riwayat.
