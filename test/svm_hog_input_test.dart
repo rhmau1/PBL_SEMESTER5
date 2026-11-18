@@ -67,6 +67,47 @@ void main() {
     expect(result.rejection, contains('kurang kontras'));
   });
 
+  test('compensates for smooth lighting on photos', () {
+    final image = img.Image(width: 128, height: 96, numChannels: 1);
+    for (final pixel in image) {
+      final foreground =
+          pixel.x >= 44 && pixel.x <= 76 && pixel.y >= 23 && pixel.y <= 70;
+      final gain = 0.48 + 0.5 * pixel.x / 127;
+      pixel.r = ((foreground ? 95 : 245) * gain).round();
+    }
+    final baseline = SvmHogInput.prepareHandCrops(
+      image,
+      includePhotoChecks: true,
+      correctUnevenLighting: false,
+    );
+    expect(baseline.rejection, contains('Tepi foto terlalu bervariasi'));
+    final corrected = SvmHogInput.prepareHandCrops(
+      image,
+      includePhotoChecks: true,
+    );
+    expect(corrected.rejection, isNull);
+    expect(corrected.crops.first[32 * 64 + 32], lessThan(100));
+    expect(corrected.crops.first.first, greaterThan(150));
+  });
+
+  test('a sharp boundary or a handless gradient gives no crops', () {
+    final image = img.Image(width: 128, height: 96, numChannels: 1);
+    for (final pixel in image) {
+      pixel.r = pixel.x < 64 ? 110 : 240;
+    }
+    final sharp = SvmHogInput.prepareHandCrops(image, includePhotoChecks: true);
+    expect(sharp.rejection, contains('Tepi foto terlalu bervariasi'));
+    for (final pixel in image) {
+      pixel.r = (110 + 130 * pixel.x / 127).round();
+    }
+    final smooth = SvmHogInput.prepareHandCrops(
+      image,
+      includePhotoChecks: true,
+    );
+    expect(smooth.crops, isEmpty);
+    expect(smooth.rejection, contains('kurang kontras'));
+  });
+
   test(
     'photo checks reuse the tight crop and preserve both baseline inputs',
     () {

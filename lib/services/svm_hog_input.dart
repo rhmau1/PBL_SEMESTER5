@@ -49,6 +49,7 @@ class SvmHogInput {
     img.Image image, {
     bool tightFraming = true,
     bool includePhotoChecks = false,
+    bool correctUnevenLighting = true,
   }) {
     if (math.min(image.width, image.height) < 28) {
       return (crops: [], rejection: 'Resolusi foto terlalu kecil.');
@@ -96,12 +97,16 @@ class SvmHogInput {
     final background = percentile(0.5);
     final spread = percentile(0.9) - percentile(0.1);
     if (spread > 55) {
-      return (
-        crops: [],
-        rejection: 'Tepi foto terlalu bervariasi. Gunakan latar polos.',
-      );
+      if (!includePhotoChecks ||
+          !correctUnevenLighting ||
+          !_flattenLighting(gray, w, h, band, background)) {
+        return (
+          crops: [],
+          rejection: 'Tepi foto terlalu bervariasi. Gunakan latar polos.',
+        );
+      }
     }
-    final threshold = math.max(18, (spread * 1.25).round());
+    final threshold = spread > 55 ? 18 : math.max(18, (spread * 1.25).round());
     final mask = Uint8List(gray.length);
     for (var i = 0; i < gray.length; i++) {
       if ((gray[i] - background).abs() >= threshold) mask[i] = 1;
@@ -207,5 +212,83 @@ class SvmHogInput {
       }
     }
     return (crops: crops, rejection: null);
+  }
+
+  static bool _flattenLighting(
+    Uint8List gray,
+    int width,
+    int height,
+    int band,
+    int reference,
+  ) {
+    int cornerMedian(int x, int y) {
+      final patch = <int>[
+        for (var dy = 0; dy < band; dy++)
+          for (var dx = 0; dx < band; dx++) gray[(y + dy) * width + x + dx],
+      ]..sort();
+      return patch[patch.length ~/ 2];
+    }
+
+    final topLeft = cornerMedian(0, 0);
+    final topRight = cornerMedian(width - band, 0);
+    final bottomLeft = cornerMedian(0, height - band);
+    final bottomRight = cornerMedian(width - band, height - band);
+    if ([
+      topLeft,
+      topRight,
+      bottomLeft,
+      bottomRight,
+    ].any((value) => value < 55)) {
+      return false;
+    }
+
+    double expected(int x, int y) {
+      final fx = (x - (band - 1) / 2) / (width - band);
+      final fy = (y - (band - 1) / 2) / (height - band);
+      final top = topLeft + fx * (topRight - topLeft);
+      final bottom = bottomLeft + fx * (bottomRight - bottomLeft);
+      return top + fy * (bottom - top);
+    }
+
+    // Treat every side as evidence for the illumination estimate.
+    bool edgeMatches({
+      required int xStart,
+      required int yStart,
+      required int xEnd,
+      required int yEnd,
+    }) {
+      var matches = 0;
+      for (var y = yStart; y < yEnd; y++) {
+        for (var x = xStart; x < xEnd; x++) {
+          if ((gray[y * width + x] - expected(x, y)).abs() <= 12) matches++;
+        }
+      }
+      return matches >= (xEnd - xStart) * (yEnd - yStart) * 0.9;
+    }
+
+    if (!edgeMatches(xStart: 0, yStart: 0, xEnd: width, yEnd: band) ||
+        !edgeMatches(
+          xStart: 0,
+          yStart: height - band,
+          xEnd: width,
+          yEnd: height,
+        ) ||
+        !edgeMatches(xStart: 0, yStart: 0, xEnd: band, yEnd: height) ||
+        !edgeMatches(
+          xStart: width - band,
+          yStart: 0,
+          xEnd: width,
+          yEnd: height,
+        )) {
+      return false;
+    }
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        final index = y * width + x;
+        final local = expected(x, y).clamp(40.0, 255.0);
+        gray[index] = (gray[index] * reference / local).round().clamp(0, 255);
+      }
+    }
+    return true;
   }
 }
