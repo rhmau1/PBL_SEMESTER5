@@ -28,13 +28,43 @@ void main() {
       y2: 94,
       color: img.ColorUint8.rgb(70, 70, 70),
     );
-    final result = SvmHogInput.handCrops(image);
+    final result = SvmHogInput.prepareHandCrops(image).crops;
     expect(result, hasLength(2));
     for (final crop in result) {
       expect(crop, hasLength(64 * 64));
       expect(crop[32 * 64 + 32], 70);
       expect(crop[0], 230);
     }
+  });
+
+  test('how tightly the photo is framed changes foreground size', () {
+    final image = img.Image(width: 160, height: 160, numChannels: 1);
+    img.fill(image, color: img.ColorUint8.rgb(230, 230, 230));
+    img.fillRect(
+      image,
+      x1: 24,
+      y1: 42,
+      x2: 90,
+      y2: 108,
+      color: img.ColorUint8.rgb(70, 70, 70),
+    );
+    final tight = SvmHogInput.prepareHandCrops(image);
+    final wide = SvmHogInput.prepareHandCrops(image, tightFraming: false);
+    expect(tight.rejection, isNull);
+    expect(wide.rejection, isNull);
+    for (var i = 0; i < 2; i++) {
+      expect(
+        tight.crops[i].where((pixel) => pixel < 150).length,
+        greaterThan(wide.crops[i].where((pixel) => pixel < 150).length),
+      );
+    }
+  });
+
+  test('foreground failure gives a reason before classification', () {
+    final image = img.Image(width: 96, height: 96, numChannels: 1);
+    final result = SvmHogInput.prepareHandCrops(image);
+    expect(result.crops, isEmpty);
+    expect(result.rejection, contains('kurang kontras'));
   });
 
   test(

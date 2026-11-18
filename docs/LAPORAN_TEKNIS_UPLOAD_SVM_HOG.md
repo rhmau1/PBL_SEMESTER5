@@ -54,7 +54,7 @@ Titik tengah bounding box mengikuti lokasi objek sehingga tangan boleh berada di
 
 ## 6. Crop persegi, padding, dan resize
 
-Aplikasi membuat dua crop dari pusat bounding box yang sama. Panjang sisi crop memakai **1,2× dan 1,4×** sisi terpanjang bounding box. Crop lebih kecil mengambil area tangan lebih rapat, sedangkan crop lebih luas menyertakan lebih banyak konteks. Bagian crop di luar foto diisi dengan intensitas perkiraan latar. Piksel grayscale di dalam crop tetap digunakan bersama detail pada tangan. Mask dipakai untuk mencari area.
+Aplikasi membuat dua crop dari pusat bounding box yang sama. Untuk jalur file foto pada percobaan terbaru, panjang sisi crop memakai **1,05× dan 1,12×** sisi terpanjang bounding box. Build awal di Vivo memakai 1,2× dan 1,4×. Bagian crop di luar foto diisi dengan intensitas perkiraan latar. Piksel grayscale di dalam crop tetap digunakan bersama detail pada tangan. Mask dipakai untuk mencari area.
 
 Kedua crop diperkecil ke **28×28** dengan interpolasi rata-rata untuk mendekati resolusi sumber Sign Language MNIST. Selanjutnya gambar diubah ke **64×64** dengan interpolasi linear untuk memenuhi grid HOG. Crop persegi mempertahankan proporsi tangan. Langkah resize mengubah kisi piksel tanpa menambah detail sumber. Training MNIST memakai gambar 28×28 yang sudah siap sebagai input, sedangkan segmentasi dan dua crop merupakan penyesuaian untuk foto kamera atau galeri.
 
@@ -153,3 +153,28 @@ try {
 ```
 
 APK hasil Gradle tersedia di `build/app/outputs/apk/debug/app-debug.apk`. Set Drive uji dimuat terpisah ke direktori dokumen aplikasi. Aplikasi mencatat hasil tombol **Uji foto Drive** dalam `app_flutter/svm_qa_report.json` yang dapat dibaca dengan `adb exec-out run-as com.example.sign_language.svmqa cat app_flutter/svm_qa_report.json` pada build debug.
+
+## 14. Percobaan perbaikan crop
+
+Pada set Drive, seluruh gambar lolos segmentasi. Saya menguji enam ukuran crop, tiga ukuran gambar sebelum HOG (28, 40, dan 64 piksel), serta inversi intensitas untuk latar terang. Semua percobaan memakai model SVM yang sama. Perubahan crop saja menghasilkan angka berikut pada uji lokal.
+
+| Crop | Benar | Salah yang lolos | Belum yakin |
+| --- | ---: | ---: | ---: |
+| 1,20× dan 1,40× | 8/24 (33,33%) | 10 | 6 |
+| 1,05× dan 1,12× | 11/24 (45,83%) | 9 | 4 |
+
+Pada input 28×28, crop yang lebih rapat memberi tangan lebih banyak piksel. HOG menghitung distribusi arah tepi pada sel tetap, sehingga perubahan ukuran tangan dapat menggeser pola tepi ke sel yang berbeda. Pengaruhnya terlihat pada hasil kedua crop.
+
+| Foto | Dua prediksi lama | Dua prediksi rapat | Hasil rapat |
+| --- | :---: | :---: | --- |
+| A | N / N | A / A | Benar |
+| F | F / B | F / F | Benar |
+| V | W / W | V / V | Benar |
+| S | N / N | S / N | Belum yakin |
+| N | O / N | O / O | Salah yang lolos |
+| C | E / E | E / E | Salah yang lolos |
+| K | V / V | U / U | Salah yang lolos |
+
+C, K, dan U tidak mencapai label target pada konfigurasi yang dicoba. Temuan ini mengarahkan pemeriksaan berikutnya ke kesesuaian fitur HOG antara foto asli dan data training. Pada foto lain di luar set Drive, 73 dari 73 berkas lolos pembacaan gambar lalu berhenti di pemeriksaan variasi tepi sebelum crop dan inferensi. Artinya, percobaan ini memperbaiki framing pada foto berlatar polos. Separasi tangan dari latar ramai tetap menjadi batas penggunaan backend saat ini.
+
+Ukuran crop dipilih dari hasil eksplorasi pada set Drive, sehingga 45,83% adalah angka pengembangan. Konfigurasi 40×40 dengan inversi menghasilkan 12 benar, 10 salah yang lolos, dan 2 belum yakin. Percobaan lanjutan memakai 28×28 dan crop rapat karena perubahan ini menguji satu faktor dan menurunkan jumlah prediksi salah yang lolos. Pengukuran berikutnya perlu memakai foto berlabel yang belum dipakai untuk memilih konfigurasi, termasuk pose dari beberapa orang dan sesi. Jalankan probe dengan opsi `--wide` untuk mengulang nilai awal.

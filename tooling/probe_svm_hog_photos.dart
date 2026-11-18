@@ -5,9 +5,11 @@ import 'package:sign_language/services/svm_hog_input.dart';
 import 'package:sign_language/services/svm_hog_model.dart';
 
 void main(List<String> args) {
-  if (args.length != 1) {
+  if (args.isEmpty ||
+      args.length > 2 ||
+      (args.length == 2 && args[1] != '--wide')) {
     stderr.writeln(
-      'Usage: dart run tooling/probe_svm_hog_photos.dart PHOTO_DIR',
+      'Usage: dart run tooling/probe_svm_hog_photos.dart PHOTO_DIR [--wide]',
     );
     exitCode = 64;
     return;
@@ -15,7 +17,7 @@ void main(List<String> args) {
   final model = SvmHogModel(
     File('assets/models/svm_hog.bin.gz').readAsBytesSync(),
   );
-  final directory = Directory(args.single);
+  final directory = Directory(args.first);
   final manifest = jsonDecode(
     File('${directory.path}/manifest.json').readAsStringSync(),
   ) as Map<String, dynamic>;
@@ -26,7 +28,11 @@ void main(List<String> args) {
     if (item['static_24_eligible'] != true) continue;
     final path = '${directory.path}/${item['filename']}';
     final image = SvmHogInput.decode(File(path).readAsBytesSync())!;
-    final predictions = SvmHogInput.handCrops(image)
+    final preparation = SvmHogInput.prepareHandCrops(
+      image,
+      tightFraming: args.length == 1,
+    );
+    final predictions = preparation.crops
         .map((crop) => model.predict(SvmHogModel.hog(crop)).label)
         .toList();
     final accepted =
@@ -39,7 +45,8 @@ void main(List<String> args) {
       incorrect++;
     }
     stdout.writeln(
-      '${item['filename']}: ${predictions.join('/')} ${accepted ? '' : '(ditolak)'}',
+      '${item['filename']}: ${predictions.join('/')} '
+      '${preparation.rejection ?? (accepted ? '' : '(crop berbeda)')}',
     );
   }
   stdout.writeln(

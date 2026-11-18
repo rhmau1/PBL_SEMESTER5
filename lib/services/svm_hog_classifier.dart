@@ -142,9 +142,10 @@ class SvmHogClassifier {
           reply.send('Format gambar tidak dapat dibaca.');
           return;
         }
-        final crops = SvmHogInput.handCrops(image);
-        if (crops.isEmpty) {
-          reply.send(null);
+        final (crops: crops, rejection: rejection) =
+            SvmHogInput.prepareHandCrops(image, tightFraming: input is String);
+        if (rejection != null) {
+          reply.send(input is String ? rejection : null);
           return;
         }
         final first = model.predict(SvmHogModel.hog(crops[0]));

@@ -45,8 +45,13 @@ class SvmHogInput {
     return rotation == 0 ? source : img.copyRotate(source, angle: rotation);
   }
 
-  static List<Uint8List> handCrops(img.Image image) {
-    if (math.min(image.width, image.height) < 28) return [];
+  static ({List<Uint8List> crops, String? rejection}) prepareHandCrops(
+    img.Image image, {
+    bool tightFraming = true,
+  }) {
+    if (math.min(image.width, image.height) < 28) {
+      return (crops: [], rejection: 'Resolusi foto terlalu kecil.');
+    }
     final longest = math.max(image.width, image.height);
     final ratio = math.min(1.0, 384 / longest);
     final resized = ratio < 1
@@ -89,7 +94,12 @@ class SvmHogInput {
 
     final background = percentile(0.5);
     final spread = percentile(0.9) - percentile(0.1);
-    if (spread > 55) return [];
+    if (spread > 55) {
+      return (
+        crops: [],
+        rejection: 'Tepi foto terlalu bervariasi. Gunakan latar polos.',
+      );
+    }
     final threshold = math.max(18, (spread * 1.25).round());
     final mask = Uint8List(gray.length);
     for (var i = 0; i < gray.length; i++) {
@@ -137,19 +147,25 @@ class SvmHogInput {
       }
     }
     final side = math.max(right - left + 1, bottom - top + 1);
-    if (largest < w * h * 0.02 ||
-        largest > w * h * 0.85 ||
-        second > largest * 0.35 ||
-        side < 20 ||
-        left == 0 ||
-        right == w - 1 ||
-        top == 0 ||
-        bottom == h - 1) {
-      return [];
+    if (largest < w * h * 0.02 || side < 20) {
+      return (
+        crops: [],
+        rejection: 'Area objek terlalu kecil atau kurang kontras.',
+      );
+    }
+    if (largest > w * h * 0.85) {
+      return (crops: [], rejection: 'Area objek memenuhi hampir seluruh foto.');
+    }
+    if (second > largest * 0.35) {
+      return (crops: [], rejection: 'Ada beberapa area objek besar.');
+    }
+    if (left == 0 || right == w - 1 || top == 0 || bottom == h - 1) {
+      return (crops: [], rejection: 'Area objek menyentuh tepi foto.');
     }
 
-    // Preserve the hand's proportions and use the estimated background in padding.
-    return [1.2, 1.4]
+    // Keep more of the hand in the 28x28 photo input before computing HOG.
+    final scales = tightFraming ? const [1.05, 1.12] : const [1.2, 1.4];
+    final crops = scales
         .map((margin) {
           final size = (side * margin).ceil();
           final x0 = (left + right + 1 - size) ~/ 2;
@@ -158,13 +174,10 @@ class SvmHogInput {
           for (var y = 0; y < size; y++) {
             for (var x = 0; x < size; x++) {
               final sx = x0 + x, sy = y0 + y;
-              crop.setPixelR(
-                x,
-                y,
-                sx >= 0 && sx < w && sy >= 0 && sy < h
-                    ? gray[sy * w + sx]
-                    : background,
-              );
+              final value = sx >= 0 && sx < w && sy >= 0 && sy < h
+                  ? gray[sy * w + sx]
+                  : background;
+              crop.setPixelR(x, y, value);
             }
           }
           final small = img.copyResize(
@@ -182,5 +195,6 @@ class SvmHogInput {
           return Uint8List.fromList(input.getBytes());
         })
         .toList(growable: false);
+    return (crops: crops, rejection: null);
   }
 }
