@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:sign_language/services/sign_classifier.dart';
 import 'package:sign_language/services/svm_hog_classifier.dart';
 import 'package:sign_language/services/svm_hog_input.dart';
 
@@ -213,6 +214,21 @@ void main() {
       expect('ABCDEFGHIKLMNOPQRSTUVWXY', contains(prediction.label));
       expect(prediction.scores, hasLength(24));
       expect(prediction.scores.every((score) => score.isFinite), isTrue);
+      final upload = await SignClassifier.instance.classifyUploadFile(path);
+      expect(upload.label, prediction.label);
+      expect(upload.scores, prediction.scores);
+      expect(upload.accepted, prediction.accepted);
+      expect(upload.confidence, isNull);
+
+      final frame = await SignClassifier.instance.classifyLuma(
+        bytes: Uint8List.fromList([for (final pixel in image) pixel.r.toInt()]),
+        width: image.width,
+        height: image.height,
+        stride: image.width,
+        pixelStride: 1,
+        rotation: 0,
+      );
+      expect(frame?.scores, hasLength(24));
     },
   );
 }

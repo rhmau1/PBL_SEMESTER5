@@ -482,7 +482,7 @@ void main() {
   );
 
   testWidgets(
-    'photo reports missing backend, saves no result, and allows retry/retake',
+    'camera photo reports insufficient resolution and allows retry/retake',
     (tester) async {
       final directory = (await tester.runAsync(() async {
         final directory = await Directory.systemTemp.createTemp(
@@ -493,6 +493,7 @@ void main() {
         return directory;
       }))!;
       final original = File('${directory.path}/temporary.jpg');
+      await tester.runAsync(() => SignClassifier.instance.initialize());
       backend.picturePath = original.path;
       var isBusy = false;
       final savedResults = <HistoryItem>[];
@@ -556,7 +557,7 @@ void main() {
         await tester.pump();
         expect(isBusy, isFalse);
         expect(
-          find.textContaining(SignClassifier.unavailableMessage),
+          find.textContaining('Resolusi foto terlalu kecil.'),
           findsOneWidget,
         );
         expect(savedResults, isEmpty);

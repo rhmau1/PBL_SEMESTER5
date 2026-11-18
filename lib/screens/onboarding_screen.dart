@@ -27,7 +27,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _OnboardingSlide(
       eyebrow: 'PILIH MODEL AI',
       title: 'Kenali metode SVM dan HOG',
-      description: 'Frontend ini disiapkan untuk metode SVM dan HOG. Backend pengenalan huruf belum terpasang.',
+      description: 'HOG membaca pola tepi tangan dan SVM mengenali 24 huruf statis langsung di perangkat.',
       visual: _SlideVisual.models,
     ),
     _OnboardingSlide(

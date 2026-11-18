@@ -410,7 +410,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                       children: [
                         Expanded(
                           child: Text(
-                            '${item.source == 'video' ? 'Rata-rata keyakinan huruf' : 'Keyakinan model'}: ${item.confidenceLabel}',
+                            item.hasConfidence
+                                ? '${item.source == 'video' ? 'Rata-rata keyakinan huruf' : 'Keyakinan model'}: ${item.confidenceLabel}'
+                                : 'Deteksi diterima',
                             style: const TextStyle(
                               color: Color(0xFF2864F0),
                               fontSize: 14,
@@ -439,29 +441,31 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                           ),
                       ],
                     ),
-                    const SizedBox(height: 9),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: LinearProgressIndicator(
-                        value: confidence.clamp(0.0, 1.0).toDouble(),
-                        minHeight: 8,
-                        backgroundColor: const Color(0xFFE2E9F3),
-                        color: const Color(0xFF2864F0),
-                      ),
-                    ),
-                    const SizedBox(height: 9),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Keyakinan model adalah skor prediksi, bukan jaminan hasil pasti benar.',
-                        style: TextStyle(
-                          color: Color(0xFF8A9AB5),
-                          fontSize: 11,
-                          fontStyle: FontStyle.italic,
-                          height: 1.4,
+                    if (item.hasConfidence) ...[
+                      const SizedBox(height: 9),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: LinearProgressIndicator(
+                          value: confidence.clamp(0.0, 1.0).toDouble(),
+                          minHeight: 8,
+                          backgroundColor: const Color(0xFFE2E9F3),
+                          color: const Color(0xFF2864F0),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 9),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Keyakinan model adalah skor prediksi, bukan jaminan hasil pasti benar.',
+                          style: TextStyle(
+                            color: Color(0xFF8A9AB5),
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -736,7 +740,9 @@ class _HistoryItemTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'Keyakinan model: ${item.confidenceLabel}',
+                        item.hasConfidence
+                            ? 'Keyakinan model: ${item.confidenceLabel}'
+                            : 'Deteksi diterima',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: muted, fontSize: 10),
@@ -748,31 +754,33 @@ class _HistoryItemTile extends StatelessWidget {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            item.confidence != null && item.confidence! >= 0.75
-                            ? const Color(0xFFE3F8EF)
-                            : const Color(0xFFEAF0FF),
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: Text(
-                        item.confidenceLabel,
-                        style: TextStyle(
+                    if (item.hasConfidence)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
                           color:
                               item.confidence != null &&
                                   item.confidence! >= 0.75
-                              ? const Color(0xFF00A879)
-                              : blue,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                              ? const Color(0xFFE3F8EF)
+                              : const Color(0xFFEAF0FF),
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        child: Text(
+                          item.confidenceLabel,
+                          style: TextStyle(
+                            color:
+                                item.confidence != null &&
+                                    item.confidence! >= 0.75
+                                ? const Color(0xFF00A879)
+                                : blue,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
                     const SizedBox(height: 4),
                     SizedBox(
                       width: 34,

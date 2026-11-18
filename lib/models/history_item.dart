@@ -27,20 +27,23 @@ class HistoryItem {
 
   factory HistoryItem.fromDetection({
     required String gesture,
-    required double confidence,
+    required double? confidence,
     required String source,
     String modelId = 'camera_robust_v1',
     String? imagePath,
     String? videoPath,
   }) {
-    if (!confidence.isFinite || confidence < 0 || confidence > 1) {
+    if (confidence != null &&
+        (!confidence.isFinite || confidence < 0 || confidence > 1)) {
       throw ArgumentError.value(confidence, 'confidence', 'Harus antara 0–1.');
     }
     final now = DateTime.now();
     String two(int value) => value.toString().padLeft(2, '0');
     return HistoryItem(
       gesture: gesture,
-      accuracy: '${(confidence * 100).toStringAsFixed(1)}%',
+      accuracy: confidence == null
+          ? '—'
+          : '${(confidence * 100).toStringAsFixed(1)}%',
       date: '${now.year}-${two(now.month)}-${two(now.day)}',
       time: '${two(now.hour)}:${two(now.minute)}:${two(now.second)}',
       confidence: confidence,
@@ -61,6 +64,10 @@ class HistoryItem {
   String get confidenceLabel => confidence == null
       ? accuracy
       : '${(confidence! * 100).toStringAsFixed(1)}%';
+
+  bool get hasConfidence =>
+      confidence != null ||
+      double.tryParse(accuracy.replaceAll('%', '')) != null;
 
   String get modelLabel => switch (modelId) {
     'svm_hog' => 'SVM + HOG',

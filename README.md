@@ -11,12 +11,13 @@ dan badges. Aset gambar, tema, serta komponen UI tetap digunakan.
 Preview kamera, pengambilan foto, pemilih gambar, dan penyimpanan lokal
 frontend dipertahankan.
 
-## Backend untuk integrasi
+## Deteksi di perangkat
 
 `SvmHogClassifier` menjalankan preprocessing, HOG, StandardScaler, dan RBF SVM
 augmented langsung di perangkat. API Dart menerima file foto dan buffer
-luma kamera. Asetnya mendukung 24 huruf statis. Sambungan ke layar Foto,
-Upload, dan Video menjadi pekerjaan tim frontend.
+luma kamera untuk layar Foto, Upload, dan Video. Asetnya mendukung 24 huruf
+statis. Foto diterima berdasarkan kesepakatan prediksi crop. Video mencatat
+huruf setelah tiga sampel berurutan memilih huruf yang sama.
 
 Kontrak hasil dan pengujian backend ada di
 [PRD integrasi](docs/PRD_SVM_HOG_MOBILE_INTEGRATION.md).
