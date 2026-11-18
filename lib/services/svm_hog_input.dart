@@ -48,6 +48,7 @@ class SvmHogInput {
   static ({List<Uint8List> crops, String? rejection}) prepareHandCrops(
     img.Image image, {
     bool tightFraming = true,
+    bool includePhotoChecks = false,
   }) {
     if (math.min(image.width, image.height) < 28) {
       return (crops: [], rejection: 'Resolusi foto terlalu kecil.');
@@ -165,36 +166,46 @@ class SvmHogInput {
 
     // Keep more of the hand in the 28x28 photo input before computing HOG.
     final scales = tightFraming ? const [1.05, 1.12] : const [1.2, 1.4];
-    final crops = scales
-        .map((margin) {
-          final size = (side * margin).ceil();
-          final x0 = (left + right + 1 - size) ~/ 2;
-          final y0 = (top + bottom + 1 - size) ~/ 2;
-          final crop = img.Image(width: size, height: size, numChannels: 1);
-          for (var y = 0; y < size; y++) {
-            for (var x = 0; x < size; x++) {
-              final sx = x0 + x, sy = y0 + y;
-              final value = sx >= 0 && sx < w && sy >= 0 && sy < h
-                  ? gray[sy * w + sx]
-                  : background;
-              crop.setPixelR(x, y, value);
-            }
-          }
-          final small = img.copyResize(
-            crop,
-            width: 28,
-            height: 28,
-            interpolation: img.Interpolation.average,
-          );
-          final input = img.copyResize(
-            small,
-            width: 64,
-            height: 64,
-            interpolation: img.Interpolation.linear,
-          );
-          return Uint8List.fromList(input.getBytes());
-        })
-        .toList(growable: false);
+    final crops = <Uint8List>[];
+    Uint8List resizeForHog(img.Image crop, int size) {
+      final small = img.copyResize(
+        crop,
+        width: size,
+        height: size,
+        interpolation: img.Interpolation.average,
+      );
+      final input = img.copyResize(
+        small,
+        width: 64,
+        height: 64,
+        interpolation: img.Interpolation.linear,
+      );
+      return Uint8List.fromList(input.getBytes());
+    }
+
+    for (final margin in scales) {
+      final size = (side * margin).ceil();
+      final x0 = (left + right + 1 - size) ~/ 2;
+      final y0 = (top + bottom + 1 - size) ~/ 2;
+      final crop = img.Image(width: size, height: size, numChannels: 1);
+      for (var y = 0; y < size; y++) {
+        for (var x = 0; x < size; x++) {
+          final sx = x0 + x, sy = y0 + y;
+          final value = sx >= 0 && sx < w && sy >= 0 && sy < h
+              ? gray[sy * w + sx]
+              : background;
+          crop.setPixelR(x, y, value);
+        }
+      }
+      final standard = resizeForHog(crop, 28);
+      crops.add(standard);
+      if (includePhotoChecks && margin == scales.first) {
+        crops.add(
+          Uint8List.fromList(standard.map((pixel) => 255 - pixel).toList()),
+        );
+        crops.add(resizeForHog(crop, 40));
+      }
+    }
     return (crops: crops, rejection: null);
   }
 }

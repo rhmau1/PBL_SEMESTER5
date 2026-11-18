@@ -142,19 +142,24 @@ class SvmHogClassifier {
           reply.send('Format gambar tidak dapat dibaca.');
           return;
         }
-        final (crops: crops, rejection: rejection) =
-            SvmHogInput.prepareHandCrops(image, tightFraming: input is String);
+        final (
+          crops: crops,
+          rejection: rejection,
+        ) = SvmHogInput.prepareHandCrops(
+          image,
+          tightFraming: input is String,
+          includePhotoChecks: input is String,
+        );
         if (rejection != null) {
           reply.send(input is String ? rejection : null);
           return;
         }
-        final first = model.predict(SvmHogModel.hog(crops[0]));
-        final second = model.predict(SvmHogModel.hog(crops[1]));
+        final prediction = model.predictCrops(crops);
         reply.send(
           SvmHogPrediction(
-            label: first.label,
-            scores: first.scores,
-            accepted: first.label == second.label,
+            label: prediction.label,
+            scores: prediction.scores,
+            accepted: prediction.accepted,
           ),
         );
       } catch (_) {

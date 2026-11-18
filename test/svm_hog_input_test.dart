@@ -68,6 +68,32 @@ void main() {
   });
 
   test(
+    'photo checks reuse the tight crop and preserve both baseline inputs',
+    () {
+      final image = img.Image(width: 150, height: 120, numChannels: 1);
+      img.fill(image, color: img.ColorUint8.rgb(230, 230, 230));
+      img.fillRect(
+        image,
+        x1: 15,
+        y1: 20,
+        x2: 36,
+        y2: 94,
+        color: img.ColorUint8.rgb(70, 70, 70),
+      );
+      final baseline = SvmHogInput.prepareHandCrops(image).crops;
+      final photos = SvmHogInput.prepareHandCrops(
+        image,
+        includePhotoChecks: true,
+      ).crops;
+      expect(photos, hasLength(4));
+      expect(photos.first, baseline.first);
+      expect(photos.last, baseline.last);
+      expect(photos[1], baseline.first.map((pixel) => 255 - pixel));
+      expect(photos[2], hasLength(64 * 64));
+    },
+  );
+
+  test(
     'real classifier rejects blank input after loading the bundled asset',
     () async {
       final classifier = SvmHogClassifier.instance;

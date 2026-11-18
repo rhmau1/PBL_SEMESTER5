@@ -7,9 +7,9 @@ import 'package:sign_language/services/svm_hog_model.dart';
 void main(List<String> args) {
   if (args.isEmpty ||
       args.length > 2 ||
-      (args.length == 2 && args[1] != '--wide')) {
+      (args.length == 2 && !const ['--wide', '--baseline'].contains(args[1]))) {
     stderr.writeln(
-      'Usage: dart run tooling/probe_svm_hog_photos.dart PHOTO_DIR [--wide]',
+      'Usage: dart run tooling/probe_svm_hog_photos.dart PHOTO_DIR [--wide|--baseline]',
     );
     exitCode = 64;
     return;
@@ -30,23 +30,21 @@ void main(List<String> args) {
     final image = SvmHogInput.decode(File(path).readAsBytesSync())!;
     final preparation = SvmHogInput.prepareHandCrops(
       image,
-      tightFraming: args.length == 1,
+      tightFraming: !args.contains('--wide'),
+      includePhotoChecks: args.length == 1,
     );
-    final predictions = preparation.crops
-        .map((crop) => model.predict(SvmHogModel.hog(crop)).label)
-        .toList();
-    final accepted =
-        predictions.length == 2 && predictions[0] == predictions[1];
-    if (!accepted) {
+    final decision = preparation.rejection == null
+        ? model.predictCrops(preparation.crops)
+        : null;
+    if (decision?.accepted != true) {
       rejected++;
-    } else if (predictions[0] == item['target_from_filename']) {
+    } else if (decision!.label == item['target_from_filename']) {
       correct++;
     } else {
       incorrect++;
     }
     stdout.writeln(
-      '${item['filename']}: ${predictions.join('/')} '
-      '${preparation.rejection ?? (accepted ? '' : '(crop berbeda)')}',
+      '${item['filename']}: ${preparation.rejection ?? (decision!.accepted ? decision.label : 'Belum yakin')}',
     );
   }
   stdout.writeln(

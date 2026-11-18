@@ -73,6 +73,29 @@ class SvmHogModel {
   late final List<int> _starts;
   late final Float32List _mean, _scale, _intercepts, _coefficients, _vectors;
 
+  ({String label, List<double> scores, bool accepted}) predictCrops(
+    List<Uint8List> crops,
+  ) {
+    if (crops.length != 2 && crops.length != 4) {
+      throw ArgumentError.value(crops.length, 'crops.length');
+    }
+    if (crops.length == 4) {
+      // The photo checks come from the tighter crop: inverted and finer resize.
+      final inverted = predict(hog(crops[1]));
+      final finer = predict(hog(crops[2]));
+      if (inverted.label == finer.label) {
+        return (label: finer.label, scores: finer.scores, accepted: true);
+      }
+    }
+    final tight = predict(hog(crops.first));
+    final other = predict(hog(crops.last));
+    return (
+      label: tight.label,
+      scores: tight.scores,
+      accepted: tight.label == other.label,
+    );
+  }
+
   ({String label, List<double> scores}) predict(Float32List features) {
     if (features.length != featureCount) {
       throw ArgumentError.value(features.length, 'features');
