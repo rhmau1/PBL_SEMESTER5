@@ -6,13 +6,12 @@
   (60,67 MiB). Ekspor float32 berasal dari Joblib model 07 dan dimuat sekali ke
   isolate Dart. HOG dan inferensi dicocokkan dengan scikit-learn 1.6.1 pada
   43 input grayscale 64×64 dari bukti MNIST. Seluruh label cocok.
-- Foto dan Upload memakai orientasi EXIF, segmentasi foreground klasik,
+- Backend foto memakai orientasi EXIF, segmentasi foreground klasik,
   dua crop persegi, grayscale, resize 28×28 lalu 64×64, dan HOG.
   Hasil diterima jika dua crop memilih huruf yang sama. Skor keputusan
-  SVM tersedia tanpa persentase keyakinan pada antarmuka dan riwayat.
-- Video memakai jalur yang sama dari bidang luma kamera. Sampling maksimal
-  empat kali per detik dan huruf diterima setelah tiga sampel yang konsisten.
-  Mode bebas menampilkan hasil setelah Akhiri dan mode target berjalan otomatis.
+  SVM tersedia sebagai nilai keputusan mentah.
+- Backend frame menerima bidang luma kamera dan memakai jalur crop serta
+  inferensi yang sama. Tim frontend memegang sambungan layar dan sesi video.
 - Uji diagnostik lokal pada 24 foto Drive berlatar putih menghasilkan 8 benar,
   10 salah, dan 6 ditolak karena dua crop berbeda. Akurasi seluruh input
   33,33%. Foto ini dipakai untuk pengembangan dan belum mengukur akurasi
@@ -21,9 +20,8 @@
 
 ## 1. Tujuan
 
-Menghubungkan model SVM-HOG augmented ke frontend Flutter yang berasal dari branch Silva. Integrasi mencakup mode Foto, Upload satu gambar, Upload banyak gambar, dan alur kamera yang sudah tersedia.
-
-Tampilan, navigasi, kamus, riwayat, progres belajar, dan badges tetap menggunakan frontend yang ada. Pekerjaan utama berada pada backend inferensi dan sambungan ke `SignClassifier`.
+Menyiapkan backend SVM-HOG augmented untuk frontend Flutter dari Silva.
+API backend tersedia untuk Foto, Upload satu atau banyak gambar, dan frame Video.
 
 ## 2. Model yang dipakai
 
@@ -45,23 +43,21 @@ Model Joblib tidak bisa dimuat oleh `tflite_flutter`. TFLite digunakan untuk mod
 ```text
 Foto atau frame kamera
     -> orientasi dan pembacaan gambar
-    -> crop tangan berbentuk persegi
     -> grayscale
-    -> penyesuaian kontras dan latar
-    -> resize sesuai konfigurasi
+    -> segmentasi foreground dan dua crop persegi
+    -> resize 28×28 lalu 64×64
     -> ekstraksi HOG
     -> StandardScaler
     -> RBF SVM
     -> label huruf dan skor keputusan
-    -> validasi hasil
-    -> tampilan dan riwayat
+    -> periksa kesepakatan dua crop
 ```
 
 Model training memakai gambar MNIST 28x28 yang diproses menjadi 64x64 sebelum HOG. Preprocessing mobile harus menghasilkan bentuk dan skala tangan yang sama. Crop yang berbeda dari training dapat menyebabkan penurunan akurasi walaupun model benchmark memiliki hasil tinggi.
 
 ## 4. Kontrak backend Flutter
 
-File utama yang menjadi boundary adalah `lib/services/sign_classifier.dart`.
+Panggil `SvmHogClassifier.instance` dari `lib/services/svm_hog_classifier.dart`.
 
 ### `initialize`
 
@@ -69,15 +65,24 @@ Memuat konfigurasi model, scaler, support vector, koefisien, intercept, dan konf
 
 ### `classifyFile`
 
-Menerima path gambar, menjalankan preprocessing, HOG, scaler, dan SVM, lalu mengembalikan `SignPrediction`.
+Menerima path gambar dan mengembalikan `Future<SvmHogPrediction>`.
+File hilang, gambar gagal dibaca, atau foreground yang gagal dipisahkan
+menghasilkan `FormatException`. Timeout inferensi menghasilkan `StateError`.
 
-### `classifyUploadFile`
+### `classifyLuma`
 
-Memakai jalur yang sama dengan `classifyFile` untuk satu gambar dan banyak gambar.
+Menerima byte bidang Y dengan `width`, `height`, `stride` (byte per baris),
+`pixelStride`, dan rotasi searah jarum jam `0/90/180/270`. Hasil `null`
+berarti area foreground gagal dipisahkan. Buffer atau metadata yang tidak
+valid menghasilkan `FormatException`.
 
-### `SignPrediction`
+### `SvmHogPrediction`
 
-Mengembalikan label huruf, skor keputusan, dan daftar skor kelas. Skor SVM bukan probabilitas. UI tidak boleh menyebutnya sebagai persentase kepastian sebelum kalibrasi ditambahkan.
+- `label` adalah huruf dari crop pertama.
+- `accepted` bernilai benar saat kedua crop memilih huruf yang sama.
+- `scores` berisi 24 skor keputusan dalam urutan label di bagian 7.
+  Persentase keyakinan memerlukan kalibrasi tersendiri.
+- Gunakan `SvmHogClassifier.modelId` untuk identitas model pada riwayat.
 
 ## 5. Pekerjaan implementasi berurutan
 
@@ -85,13 +90,13 @@ Mengembalikan label huruf, skor keputusan, dan daftar skor kelas. Skor SVM bukan
 2. Ekspor isi Joblib menjadi format portabel yang dapat dibaca Flutter. Data yang diperlukan adalah scaler, support vector, dual coefficient, intercept, gamma, dan label.
 3. Implementasikan preprocessing gambar di satu tempat agar mode Foto, Upload, dan kamera memakai aturan yang sama.
 4. Implementasikan crop tangan persegi dengan padding. Aturan crop harus menghindari tangan gepeng dan mempertahankan seluruh jari.
-5. Implementasikan grayscale, normalisasi ukuran, dan penyesuaian latar sesuai data training.
+5. Samakan ukuran input melalui grayscale, padding dengan warna latar, dan resize.
 6. Implementasikan HOG dengan konfigurasi 64x64, 9 orientasi, cell 8x8, block 2x2, dan L2-Hys.
 7. Implementasikan StandardScaler menggunakan nilai mean dan scale dari training.
 8. Implementasikan kernel RBF dan klasifikasi multi-kelas SVM.
-9. Hubungkan backend ke `SignClassifier.initialize`.
+9. Sambungkan adaptor frontend `SignClassifier` ke API Dart pada bagian 4.
 10. Hubungkan hasil satu foto ke `CameraScreen` dan `UploadScreen` melalui `classifyFile`.
-11. Hubungkan hasil banyak foto ke loop upload yang sudah tersedia melalui `classifyUploadFile`.
+11. Panggil `classifyFile` untuk setiap gambar di loop Upload.
 12. Simpan riwayat hanya ketika hasil melewati aturan penerimaan yang telah ditentukan.
 13. Tampilkan status gagal, belum yakin, dan gambar tanpa tangan tanpa membuat huruf palsu.
 14. Pastikan perpindahan tab, background aplikasi, penggantian kamera, dan sesi baru membatalkan pekerjaan inferensi yang masih berjalan.
@@ -108,17 +113,23 @@ Mengembalikan label huruf, skor keputusan, dan daftar skor kelas. Skor SVM bukan
 
 ### CameraScreen
 
-Mode Foto memanggil `classifyFile` setelah foto diambil. Mode Video memproses frame yang sudah dipilih oleh aturan sampling. Hasil hanya diterima setelah prediksi stabil pada beberapa frame.
+Tim frontend bisa memanggil `classifyFile` setelah pengambilan foto dan
+`classifyLuma` pada frame Video terpilih. Untuk Video, batasi satu
+permintaan pada satu waktu, tunggu prediksi stabil pada beberapa frame,
+dan abaikan respons lama setelah sesi atau target berubah.
 
 Mode Video memerlukan perhatian khusus karena SVM-HOG hanya mengenali pose statis. J dan Z membutuhkan model gerakan terpisah dan belum masuk ke model ini.
 
 ### UploadScreen
 
-Upload satu dan banyak gambar tetap memakai pemilih gambar, indikator proses, tampilan hasil, dan penyimpanan riwayat yang sudah tersedia. Implementasi backend menggantikan kegagalan sementara pada `SignClassifier`.
+Tim frontend bisa memakai pemilih gambar dan loop Upload yang sudah ada.
+Proses setiap path dengan `classifyFile` dan tangani kegagalan per gambar.
 
 ### Riwayat dan progres
 
-Gunakan `modelId = svm_hog_augmented_c100_scale`. Simpan label hanya ketika hasil lolos aturan penerimaan. Skor keputusan SVM disimpan sebagai skor model sampai kalibrasi probabilitas tersedia.
+Simpan label ketika hasil lolos aturan penerimaan. Kontrak UI lama memiliki
+kolom keyakinan dalam persen. Tampilkan hasil SVM dengan status penerimaan
+dan biarkan nilai probabilitas kosong sampai tersedia kalibrasi.
 
 ## 7. Ruang lingkup label
 
@@ -132,7 +143,7 @@ J dan Z tidak diproses oleh SVM-HOG ini. Keduanya memerlukan model gerakan atau 
 
 ## 8. Kriteria selesai
 
-- `SignClassifier.initialize` berhasil memuat artefak tanpa error.
+- `SvmHogClassifier.initialize` berhasil memuat aset.
 - Hasil prediksi Flutter dan Python sama pada kumpulan gambar uji.
 - Foto dan Upload dapat menghasilkan label yang benar atau status belum yakin.
 - Tidak ada hasil palsu yang masuk ke riwayat.

@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:sign_language/models/history_item.dart';
-import 'package:sign_language/models/sign_prediction.dart';
 import 'package:sign_language/pages/detection_page.dart';
 import 'package:sign_language/screens/camera_screen.dart';
 import 'package:sign_language/services/sign_classifier.dart';
@@ -135,7 +134,6 @@ Widget _screen({
   double topOverlayHeight = 0,
   ValueChanged<bool>? onBusyChanged,
   Future<void> Function(HistoryItem)? onResultSaved,
-  Future<SignPrediction> Function(String)? classifyPhoto,
 }) => MaterialApp(
   home: Scaffold(
     body: CameraScreen(
@@ -144,7 +142,6 @@ Widget _screen({
       topOverlayHeight: topOverlayHeight,
       onBusyChanged: onBusyChanged,
       onResultSaved: onResultSaved,
-      classifyPhoto: classifyPhoto,
     ),
   ),
 );
@@ -364,7 +361,7 @@ void main() {
       expect(find.text('SVM + HOG'), findsWidgets);
       expect(find.text('Model E'), findsNothing);
       await tester.tap(
-        find.byKey(ValueKey('camera-model-option-${SignModel.svmHog.id}')),
+        find.byKey(const ValueKey('camera-model-option-svm_hog')),
       );
       await tester.tap(find.byKey(const ValueKey('camera-model-confirm')));
       await tester.pumpAndSettle();
@@ -485,7 +482,7 @@ void main() {
   );
 
   testWidgets(
-    'photo reports rejected input, saves no result, and allows retry/retake',
+    'photo reports missing backend, saves no result, and allows retry/retake',
     (tester) async {
       final directory = (await tester.runAsync(() async {
         final directory = await Directory.systemTemp.createTemp(
@@ -530,8 +527,6 @@ void main() {
           enabled: true,
           onBusyChanged: (busy) => isBusy = busy,
           onResultSaved: (item) async => savedResults.add(item),
-          classifyPhoto: (_) async =>
-              throw const FormatException('Area tangan tidak ditemukan.'),
         ),
       );
       await tester.pumpAndSettle();
@@ -561,7 +556,7 @@ void main() {
         await tester.pump();
         expect(isBusy, isFalse);
         expect(
-          find.textContaining('Area tangan tidak ditemukan'),
+          find.textContaining(SignClassifier.unavailableMessage),
           findsOneWidget,
         );
         expect(savedResults, isEmpty);

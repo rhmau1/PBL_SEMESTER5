@@ -1,8 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:sign_language/services/sign_classifier.dart';
+import 'package:sign_language/services/svm_hog_classifier.dart';
 import 'package:sign_language/services/svm_hog_input.dart';
 
 void main() {
@@ -39,7 +40,7 @@ void main() {
   test(
     'real classifier rejects blank input after loading the bundled asset',
     () async {
-      final classifier = SignClassifier.instance;
+      final classifier = SvmHogClassifier.instance;
       await Future.wait([classifier.initialize(), classifier.initialize()]);
       final prediction = await classifier.classifyLuma(
         bytes: Uint8List(96 * 96),
@@ -50,6 +51,30 @@ void main() {
         rotation: 0,
       );
       expect(prediction, isNull);
+    },
+  );
+
+  test(
+    'file inference returns an SVM result through the backend API',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('svm_hog_test_');
+      addTearDown(() => directory.delete(recursive: true));
+      final image = img.Image(width: 150, height: 120, numChannels: 3);
+      img.fill(image, color: img.ColorUint8.rgb(230, 230, 230));
+      img.fillRect(
+        image,
+        x1: 25,
+        y1: 25,
+        x2: 65,
+        y2: 95,
+        color: img.ColorUint8.rgb(70, 70, 70),
+      );
+      final path = '${directory.path}/foreground.png';
+      await File(path).writeAsBytes(img.encodePng(image));
+      final prediction = await SvmHogClassifier.instance.classifyFile(path);
+      expect('ABCDEFGHIKLMNOPQRSTUVWXY', contains(prediction.label));
+      expect(prediction.scores, hasLength(24));
+      expect(prediction.scores.every((score) => score.isFinite), isTrue);
     },
   );
 }

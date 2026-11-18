@@ -33,6 +33,7 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
+  static const _minimumConfidence = 0.60;
   final _picker = ImagePicker();
   final _results = <_UploadResult>[];
   bool _isProcessing = false;
@@ -97,7 +98,7 @@ class _UploadScreenState extends State<UploadScreen> {
         }
         if (!mounted) return;
         if (prediction != null &&
-            prediction.accepted &&
+            prediction.confidence >= _minimumConfidence &&
             widget.onResultSaved != null) {
           try {
             path = await (widget.saveImage ?? _saveImage)(file);
@@ -406,7 +407,9 @@ class _UploadResult {
   final SignPrediction? prediction;
   final String? error;
   final String? historyError;
-  bool get accepted => prediction?.accepted ?? false;
+  bool get accepted =>
+      prediction != null &&
+      prediction!.confidence >= _UploadScreenState._minimumConfidence;
 }
 
 class _UploadSummary extends StatelessWidget {
@@ -464,7 +467,7 @@ class _ResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final prediction = result.prediction;
     final accepted = result.accepted;
-    final confidence = prediction?.confidence;
+    final confidence = prediction?.confidence ?? 0;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -557,31 +560,29 @@ class _ResultCard extends StatelessWidget {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      if (confidence != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Keyakinan ${prediction.confidenceText}',
-                          style: TextStyle(
-                            color: accepted
-                                ? const Color(0xFF00A879)
-                                : const Color(0xFFAE7010),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Keyakinan ${prediction.confidenceText}',
+                        style: TextStyle(
+                          color: accepted
+                              ? const Color(0xFF00A879)
+                              : const Color(0xFFAE7010),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
                         ),
-                        const SizedBox(height: 7),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: LinearProgressIndicator(
-                            value: confidence.clamp(0.0, 1.0).toDouble(),
-                            minHeight: 6,
-                            backgroundColor: const Color(0xFFE9EEF6),
-                            color: accepted
-                                ? const Color(0xFF13B986)
-                                : const Color(0xFFE5AA33),
-                          ),
+                      ),
+                      const SizedBox(height: 7),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: LinearProgressIndicator(
+                          value: confidence.clamp(0.0, 1.0).toDouble(),
+                          minHeight: 6,
+                          backgroundColor: const Color(0xFFE9EEF6),
+                          color: accepted
+                              ? const Color(0xFF13B986)
+                              : const Color(0xFFE5AA33),
                         ),
-                      ],
+                      ),
                       if (result.historyError != null) ...[
                         const SizedBox(height: 4),
                         Text(

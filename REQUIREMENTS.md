@@ -19,7 +19,8 @@ folder project. Tidak perlu menyimpan SDK, cache dependency, atau APK di Git.
 
 Gunakan versi Flutter yang sama untuk hasil build yang konsisten. Workflow CI
 di `.github/workflows/ci.yml` memakai Flutter 3.47.5. Project ditujukan untuk
-Android. Branch RAMA-SVM-HOG menjalankan inferensi SVM-HOG langsung di perangkat.
+Android. Branch RAMA-SVM-HOG menyediakan backend inferensi Dart dan aset model
+untuk disambungkan oleh tim frontend.
 
 ## Instalasi
 

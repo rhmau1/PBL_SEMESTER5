@@ -27,23 +27,20 @@ class HistoryItem {
 
   factory HistoryItem.fromDetection({
     required String gesture,
-    required double? confidence,
+    required double confidence,
     required String source,
     String modelId = 'camera_robust_v1',
     String? imagePath,
     String? videoPath,
   }) {
-    if (confidence != null &&
-        (!confidence.isFinite || confidence < 0 || confidence > 1)) {
+    if (!confidence.isFinite || confidence < 0 || confidence > 1) {
       throw ArgumentError.value(confidence, 'confidence', 'Harus antara 0–1.');
     }
     final now = DateTime.now();
     String two(int value) => value.toString().padLeft(2, '0');
     return HistoryItem(
       gesture: gesture,
-      accuracy: confidence == null
-          ? 'Tidak tersedia'
-          : '${(confidence * 100).toStringAsFixed(1)}%',
+      accuracy: '${(confidence * 100).toStringAsFixed(1)}%',
       date: '${now.year}-${two(now.month)}-${two(now.day)}',
       time: '${two(now.hour)}:${two(now.minute)}:${two(now.second)}',
       confidence: confidence,
@@ -65,12 +62,8 @@ class HistoryItem {
       ? accuracy
       : '${(confidence! * 100).toStringAsFixed(1)}%';
 
-  bool get hasConfidence =>
-      confidence != null ||
-      double.tryParse(accuracy.replaceAll('%', '')) != null;
-
   String get modelLabel => switch (modelId) {
-    'svm_hog' || 'svm_hog_augmented_c100_scale' => 'SVM + HOG',
+    'svm_hog' => 'SVM + HOG',
     'camera_robust_v1' => 'Model C',
     'model_e' => 'Model E (MobileNet V2)',
     null || '' => 'Model C',

@@ -11,17 +11,15 @@ dan badges. Aset gambar, tema, serta komponen UI tetap digunakan.
 Preview kamera, pengambilan foto, pemilih gambar, dan penyimpanan lokal
 frontend dipertahankan.
 
-## Deteksi pada perangkat
+## Backend untuk integrasi
 
-Foto, Upload satu/banyak gambar, dan Video memakai RBF SVM augmented, HOG,
-dan StandardScaler dalam Dart. Aplikasi memuat aset `assets/models/svm_hog.bin.gz`
-otomatis dari APK. Gunakan satu tangan utuh dengan latar polos dan kontras.
-Video latihan bebas menampilkan urutan setelah Akhiri. Uji huruf berjalan
-otomatis saat target dipilih. Dukungan mencakup 24 huruf statis di luar J/Z.
+`SvmHogClassifier` menjalankan preprocessing, HOG, StandardScaler, dan RBF SVM
+augmented langsung di perangkat. API Dart menerima file foto dan buffer
+luma kamera. Asetnya mendukung 24 huruf statis. Sambungan ke layar Foto,
+Upload, dan Video menjadi pekerjaan tim frontend.
 
-Hasil bersifat eksperimental. Persetujuan dua crop menjadi aturan penerimaan
-dan tampilan SVM tidak memberi persentase keyakinan. Lihat
-[PRD integrasi](docs/PRD_SVM_HOG_MOBILE_INTEGRATION.md) untuk hasil pengujian.
+Kontrak hasil dan pengujian backend ada di
+[PRD integrasi](docs/PRD_SVM_HOG_MOBILE_INTEGRATION.md).
 
 ## Training di Google Colab
 

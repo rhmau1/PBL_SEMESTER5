@@ -11,7 +11,6 @@ import '../models/history_item.dart';
 import '../models/sign_prediction.dart';
 import '../services/camera_preview_size.dart';
 import '../services/sign_classifier.dart';
-import '../services/stable_sign.dart';
 import '../widgets/full_bleed_camera_preview.dart';
 
 class CameraScreen extends StatefulWidget {
@@ -24,7 +23,6 @@ class CameraScreen extends StatefulWidget {
     this.topOverlayHeight = 0,
     this.selectedModel = SignModel.svmHog,
     this.onModelChanged,
-    this.classifyPhoto,
   });
 
   final bool cameraEnabled;
@@ -34,7 +32,6 @@ class CameraScreen extends StatefulWidget {
   final double topOverlayHeight;
   final SignModel selectedModel;
   final ValueChanged<SignModel>? onModelChanged;
-  final Future<SignPrediction> Function(String path)? classifyPhoto;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -42,6 +39,7 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
+  static const _minimumConfidence = 0.60;
   static final _supportedLabels = 'ABCDEFGHIKLMNOPQRSTUVWXY'.split('');
 
   CameraController? _controller;
@@ -54,14 +52,11 @@ class _CameraScreenState extends State<CameraScreen>
   bool _handDetected = false;
   String? _cameraError;
   final List<String> _sessionLetters = [];
-  final _stableSign = StableSign();
-  final _frameClock = Stopwatch()..start();
-  int _lastFrameAt = -250;
-  bool _processingFrame = false;
-  int _recognitionGeneration = 0;
+  final List<double> _sessionConfidences = [];
   final List<String> _validationPredictions = [];
   String _selectedTarget = '';
   String? _latestTargetPrediction;
+  double? _latestTargetConfidence;
   String? _savedVideoPath;
   bool _isStartingSession = false;
   bool _isEndingSession = false;
@@ -165,7 +160,6 @@ class _CameraScreenState extends State<CameraScreen>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
       _appIsActive = false;
-      if (_isSessionActive) unawaited(_endSession(showResult: false));
       unawaited(_disposeCamera());
     } else if (state == AppLifecycleState.resumed) {
       _appIsActive = true;
@@ -487,94 +481,32 @@ class _CameraScreenState extends State<CameraScreen>
   }) {
     if (clearFreeResults) {
       _sessionLetters.clear();
+      _sessionConfidences.clear();
     }
     if (clearTargetResults) _validationPredictions.clear();
     _handDetected = false;
     _latestTargetPrediction = null;
-    _recognitionGeneration++;
-    _stableSign.reset();
-    _lastFrameAt = -250;
+    _latestTargetConfidence = null;
   }
 
   void _onCameraFrame(CameraImage cameraImage) {
-    final controller = _controller;
-    final now = _frameClock.elapsedMilliseconds;
-    if (!mounted ||
-        !_appIsActive ||
-        !_isAnalysisActive ||
-        _processingFrame ||
-        controller == null ||
-        now - _lastFrameAt < 250 ||
-        (cameraImage.format.group != ImageFormatGroup.yuv420 &&
-            cameraImage.format.group != ImageFormatGroup.nv21) ||
-        cameraImage.planes.isEmpty) {
-      return;
-    }
-    _lastFrameAt = now;
-    _processingFrame = true;
-    unawaited(_recognizeFrame(cameraImage, controller));
+    // Camera UI retained from silva. Inference will be wired to our own backend.
+    // initialize() currently rejects recognition before a stream can start.
   }
 
-  Future<void> _recognizeFrame(
-    CameraImage image,
-    CameraController controller,
-  ) async {
-    final generation = _recognitionGeneration;
-    bool isCurrent() =>
-        mounted &&
-        _appIsActive &&
-        _isAnalysisActive &&
-        identical(controller, _controller) &&
-        generation == _recognitionGeneration;
-    try {
-      final luma = image.planes.first;
-      final prediction = await SignClassifier.instance.classifyLuma(
-        bytes: luma.bytes,
-        width: image.width,
-        height: image.height,
-        stride: luma.bytesPerRow,
-        pixelStride: luma.bytesPerPixel ?? 1,
-        // The CameraX stream is in sensor orientation and capture is portrait.
-        rotation: controller.description.sensorOrientation,
-      );
-      if (!isCurrent()) return;
-      final label = _stableSign.add(
-        prediction?.accepted == true ? prediction!.label : null,
-        hasForeground: prediction != null,
-      );
-      setState(() {
-        _handDetected = prediction != null;
-        if (_isTargetAnalysisActive) {
-          _latestTargetPrediction = _stableSign.current;
-          if (label != null) {
-            _validationPredictions.add(label);
-          }
-        } else if (label != null) {
-          _sessionLetters.add(label);
-        }
-      });
-    } catch (_) {
-      if (!isCurrent()) return;
-      setState(() {
-        _handDetected = false;
-        _latestTargetPrediction = null;
-        _stableSign.reset();
-      });
-    } finally {
-      _processingFrame = false;
-    }
-  }
-
-  Future<void> _endSession({bool showResult = true}) async {
+  Future<void> _endSession() async {
     if (_isEndingSession || !_isSessionActive) return;
     final controller = _controller;
     final sequence = _sessionLetters.join();
+    final confidence = _sessionConfidences.isEmpty
+        ? 0.0
+        : _sessionConfidences.reduce((a, b) => a + b) /
+              _sessionConfidences.length;
     // Freeze accepted letters immediately. In-flight inference cannot append
     // a letter after Stop or create a second history record.
     setState(() {
       _isEndingSession = true;
       _isSessionActive = false;
-      _recognitionGeneration++;
     });
     String? videoPath;
     try {
@@ -607,7 +539,7 @@ class _CameraScreenState extends State<CameraScreen>
         await widget.onResultSaved?.call(
           HistoryItem.fromDetection(
             gesture: sequence,
-            confidence: null,
+            confidence: confidence,
             source: 'video',
             modelId: _selectedModel.id,
             videoPath: videoPath,
@@ -621,7 +553,7 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) setState(() {});
       if (mounted) widget.onBusyChanged?.call(false);
     }
-    if (mounted && _appIsActive && showResult) await _showSessionResult();
+    if (mounted) await _showSessionResult();
   }
 
   Future<void> _takePhoto() async {
@@ -685,14 +617,13 @@ class _CameraScreenState extends State<CameraScreen>
       // classifyFile applies EXIF orientation and model-specific resizing.
       final prediction =
           _photoPrediction ??
-          await (widget.classifyPhoto?.call(path) ??
-              SignClassifier.instance.classifyFile(
-                path,
-                model: _selectedModel,
-              ));
+          await SignClassifier.instance.classifyFile(
+            path,
+            model: _selectedModel,
+          );
       if (!mounted || generation != _photoGeneration) return;
       setState(() => _photoPrediction = prediction);
-      if (prediction.accepted) {
+      if (prediction.confidence >= _minimumConfidence) {
         _isSavingPhotoHistory = true;
         await widget.onResultSaved?.call(
           HistoryItem.fromDetection(
@@ -918,7 +849,6 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _disposeCamera() async {
     _cameraGeneration++;
-    _resetRecognitionState();
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
     try {
@@ -1010,6 +940,11 @@ class _CameraScreenState extends State<CameraScreen>
               .where((label) => label == _selectedTarget)
               .length
         : 0;
+    final latestConfidence = isTargetMode
+        ? _latestTargetConfidence
+        : _sessionConfidences.isEmpty
+        ? null
+        : _sessionConfidences.last;
     final showLiveResults = _isSessionActive || isTargetMode;
     final showSetupControls = !_isSessionActive && !isTargetMode;
     return ColoredBox(
@@ -1125,7 +1060,9 @@ class _CameraScreenState extends State<CameraScreen>
                     eventCount: eventCount,
                     target: _selectedTarget,
                     latestPrediction: _latestTargetPrediction,
+                    latestConfidence: latestConfidence,
                     correctCount: validationCorrect,
+                    sessionText: _sessionLetters.join(' - '),
                   ),
                   const SizedBox(height: 10),
                 ],
@@ -1212,7 +1149,8 @@ class _CameraScreenState extends State<CameraScreen>
     final prediction = _photoPrediction;
     final busy = _isTakingPhoto || _isClassifyingPhoto || _isSavingPhotoHistory;
     final colors = Theme.of(context).colorScheme;
-    final reliable = prediction?.accepted ?? false;
+    final reliable =
+        prediction != null && prediction.confidence >= _minimumConfidence;
     return ColoredBox(
       key: const PageStorageKey('camera_photo'),
       color: colors.surface,
@@ -1319,14 +1257,13 @@ class _CameraScreenState extends State<CameraScreen>
                               fontWeight: FontWeight.w900,
                             ),
                           ),
-                          if (prediction.confidence != null)
-                            Text(
-                              'Keyakinan model ${prediction.confidenceText}',
-                              style: TextStyle(
-                                color: colors.onSurfaceVariant,
-                                fontSize: 13,
-                              ),
+                          Text(
+                            'Keyakinan model ${(prediction.confidence * 100).toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 13,
                             ),
+                          ),
                           const SizedBox(height: 8),
                         ],
                         Text(
@@ -1883,7 +1820,9 @@ class _LiveResultCard extends StatelessWidget {
     required this.eventCount,
     required this.target,
     required this.latestPrediction,
+    required this.latestConfidence,
     required this.correctCount,
+    required this.sessionText,
   });
 
   final bool active;
@@ -1891,13 +1830,20 @@ class _LiveResultCard extends StatelessWidget {
   final int eventCount;
   final String target;
   final String? latestPrediction;
+  final double? latestConfidence;
   final int correctCount;
+  final String sessionText;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final isReliable = _predictionIsReliable && handDetected;
     final output = target.isNotEmpty
-        ? (handDetected ? latestPrediction : null) ?? '—'
+        ? isReliable
+              ? latestPrediction!
+              : '—'
+        : sessionText.isNotEmpty
+        ? sessionText
         : active && handDetected
         ? 'Menganalisis...'
         : '—';
@@ -1943,9 +1889,15 @@ class _LiveResultCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  active ? 'LIVE' : 'SIAP',
+                  latestConfidence == null
+                      ? active
+                            ? 'LIVE'
+                            : 'SIAP'
+                      : 'Keyakinan ${(latestConfidence! * 100).toStringAsFixed(1)}%',
                   style: TextStyle(
-                    color: active ? colors.primary : colors.onSurfaceVariant,
+                    color: latestConfidence == null
+                        ? colors.onSurfaceVariant
+                        : colors.primary,
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1992,19 +1944,28 @@ class _LiveResultCard extends StatelessWidget {
         return 'Deteksi dimulai otomatis saat kamera siap; video tidak direkam.';
       }
       if (!handDetected) {
-        return 'Gunakan latar polos dan pastikan tangan terlihat utuh.';
+        return 'Tangan boleh di mana saja; pastikan telapak dan jari tidak terpotong.';
       }
-      if (latestPrediction == null) {
+      if (latestPrediction == null || latestConfidence == null) {
         return 'Tahan pose sebentar sampai prediksi muncul.';
       }
-      return '$correctCount/$eventCount percobaan stabil benar';
+      final confidence = (latestConfidence! * 100).toStringAsFixed(1);
+      if (!_predictionIsReliable) {
+        return 'Keyakinan $confidence% masih di bawah 60% dan belum dihitung.';
+      }
+      return '$correctCount/$eventCount percobaan stabil benar | keyakinan $confidence%';
     }
     if (!active) {
       return 'Semua huruf stabil akan disusun setelah sesi diakhiri.';
     }
     if (!handDetected) {
-      return 'Gunakan latar polos dan pastikan tangan terlihat utuh.';
+      return 'Boleh di bagian mana saja; pastikan telapak dan jari tidak terpotong.';
     }
     return '$eventCount huruf tersimpan. Hasil disembunyikan sampai sesi diakhiri.';
   }
+
+  bool get _predictionIsReliable =>
+      latestPrediction != null &&
+      latestConfidence != null &&
+      latestConfidence! >= 0.60;
 }

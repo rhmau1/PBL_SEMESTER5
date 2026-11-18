@@ -3,17 +3,11 @@ class SignPrediction {
     required this.label,
     required this.confidence,
     required this.scores,
-    this.agreement,
   });
 
   final String label;
-  final double? confidence;
+  final double confidence;
   final List<double> scores;
-  final bool? agreement;
 
-  bool get accepted => agreement ?? (confidence ?? 0) >= 0.60;
-
-  String get confidenceText => confidence == null
-      ? 'Tidak tersedia'
-      : '${(confidence! * 100).toStringAsFixed(1)}%';
+  String get confidenceText => '${(confidence * 100).toStringAsFixed(1)}%';
 }

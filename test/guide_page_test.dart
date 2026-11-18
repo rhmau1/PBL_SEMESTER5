@@ -85,7 +85,7 @@ void main() {
         find.textContaining('Riwayat Deteksi Otomatis'),
       );
       expect(
-        find.textContaining('Hasil yang diterima tersimpan di Riwayat Deteksi'),
+        find.textContaining('otomatis tersimpan ke halaman Riwayat Deteksi'),
         findsOneWidget,
       );
 
