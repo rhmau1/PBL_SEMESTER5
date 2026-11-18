@@ -16,7 +16,9 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.sign_language"
+        val qaBuild = providers.gradleProperty("svmHogQa").orNull == "true"
+        applicationId = if (qaBuild) "com.example.sign_language.svmqa" else "com.example.sign_language"
+        manifestPlaceholders["appLabel"] = if (qaBuild) "LatihIsyarat QA" else "LatihIsyarat"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
