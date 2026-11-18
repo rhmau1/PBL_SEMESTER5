@@ -66,7 +66,7 @@ def default_config(root="/content/drive/MyDrive/LatihIsyarat_SVM_HOG"):
                    "gamma_values": ["scale", 0.001],
                    "augmented_rbf_finalists": 2, "svm_cache_mb": 512,
                    "linear_max_iter": 3000, "linear_tol": 0.001,
-                   "train_augmented_linear": False},
+                   "train_augmented_linear": False, "include_linear_baseline": False},
         "evidence": {"correct_per_class": 1, "errors_per_class": 2},
     }
 
@@ -524,7 +524,8 @@ def train_candidates(ctx, features):
               "%, macro-F1", round(100 * metrics["macro_f1"], 3), "%,", round(fit_seconds, 1), "detik")
         return record
 
-    fit_one("linear", 1.0)
+    if cfg["search"].get("include_linear_baseline", False):
+        fit_one("linear", 1.0)
     baseline_rbf = []
     for c in cfg["search"]["c_values"]:
         for gamma in cfg["search"]["gamma_values"]:

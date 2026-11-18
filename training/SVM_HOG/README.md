@@ -42,10 +42,11 @@ Fitur: HOG 9 arah, sel 8x8, blok 2x2, L2-Hys, transform_sqrt.
 Konfigurasi 64x64 ini menghasilkan 1.764 fitur.
 StandardScaler dilatih hanya dari bagian training.
 
-Default membandingkan sampai 9 kandidat: Linear SVM dan 6 konfigurasi RBF
-tanpa augmentasi, lalu maksimal 2 RBF terbaik dengan augmentasi. Linear SVM
-dengan augmentasi dilewati karena pada dataset ini sangat lambat dan tidak
-diperlukan untuk memilih kandidat awal.
+Default menjalankan 8 kandidat: 6 konfigurasi RBF tanpa augmentasi, lalu
+maksimal 2 RBF terbaik dengan augmentasi. Linear SVM tidak dijalankan otomatis
+karena terlalu lambat pada CPU. Opsi `include_linear_baseline` tetap tersedia
+jika perbandingan Linear SVM memang diperlukan. Linear SVM dengan augmentasi
+tetap nonaktif secara default.
 Augmentasi hanya pada sekitar 35% gambar training per kelas: rotasi,
 pergeseran, skala, pencahayaan, dan blur/noise ringan. Tanpa flip otomatis.
 
