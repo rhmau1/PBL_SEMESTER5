@@ -96,7 +96,8 @@ void main() {
       pixel.r = pixel.x < 64 ? 110 : 240;
     }
     final sharp = SvmHogInput.prepareHandCrops(image, includePhotoChecks: true);
-    expect(sharp.rejection, contains('Tepi foto terlalu bervariasi'));
+    expect(sharp.crops, isEmpty);
+    expect(sharp.rejection, contains('kurang kontras'));
     for (final pixel in image) {
       pixel.r = (110 + 130 * pixel.x / 127).round();
     }
@@ -106,6 +107,44 @@ void main() {
     );
     expect(smooth.crops, isEmpty);
     expect(smooth.rejection, contains('kurang kontras'));
+  });
+
+  test('corrects a straight shadow boundary crossing the hand', () {
+    for (final acrossX in [true, false]) {
+      final image = img.Image(width: 128, height: 128, numChannels: 1);
+      for (final pixel in image) {
+        final hand =
+            pixel.x >= 45 && pixel.x <= 83 && pixel.y >= 30 && pixel.y <= 98;
+        final shadow = (acrossX ? pixel.x : pixel.y) < 58;
+        pixel.r = ((hand ? 95 : 245) * (shadow ? .48 : .98)).round();
+      }
+      final before = SvmHogInput.prepareHandCrops(
+        image,
+        includePhotoChecks: true,
+        correctUnevenLighting: false,
+      );
+      final after = SvmHogInput.prepareHandCrops(
+        image,
+        includePhotoChecks: true,
+      );
+      final camera = SvmHogInput.prepareHandCrops(image);
+      expect(before.crops, isEmpty);
+      expect(after.rejection, isNull);
+      expect(after.crops, hasLength(4));
+      expect(camera.crops, isEmpty);
+    }
+  });
+
+  test('rejects a photo when a shadow boundary crosses edges at different positions', () {
+    final image = img.Image(width: 128, height: 128, numChannels: 1);
+    for (final pixel in image) {
+      pixel.r = pixel.x < 44 + pixel.y ~/ 4 ? 115 : 245;
+    }
+    final result = SvmHogInput.prepareHandCrops(
+      image,
+      includePhotoChecks: true,
+    );
+    expect(result.rejection, contains('Tepi foto terlalu bervariasi'));
   });
 
   test(

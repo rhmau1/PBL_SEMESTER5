@@ -242,7 +242,7 @@ class SvmHogInput {
       return false;
     }
 
-    double expected(int x, int y) {
+    double smoothLight(int x, int y) {
       final fx = (x - (band - 1) / 2) / (width - band);
       final fy = (y - (band - 1) / 2) / (height - band);
       final top = topLeft + fx * (topRight - topLeft);
@@ -251,7 +251,8 @@ class SvmHogInput {
     }
 
     // Treat every side as evidence for the illumination estimate.
-    bool edgeMatches({
+    bool edgeMatches(
+      double Function(int, int) expected, {
       required int xStart,
       required int yStart,
       required int xEnd,
@@ -266,26 +267,74 @@ class SvmHogInput {
       return matches >= (xEnd - xStart) * (yEnd - yStart) * 0.9;
     }
 
-    if (!edgeMatches(xStart: 0, yStart: 0, xEnd: width, yEnd: band) ||
-        !edgeMatches(
+    bool matchesBorder(double Function(int, int) expected) =>
+        edgeMatches(expected, xStart: 0, yStart: 0, xEnd: width, yEnd: band) &&
+        edgeMatches(
+          expected,
           xStart: 0,
           yStart: height - band,
           xEnd: width,
           yEnd: height,
-        ) ||
-        !edgeMatches(xStart: 0, yStart: 0, xEnd: band, yEnd: height) ||
-        !edgeMatches(
+        ) &&
+        edgeMatches(expected, xStart: 0, yStart: 0, xEnd: band, yEnd: height) &&
+        edgeMatches(
+          expected,
           xStart: width - band,
           yStart: 0,
           xEnd: width,
           yEnd: height,
-        )) {
-      return false;
+        );
+
+    double Function(int, int)? lighting = matchesBorder(smoothLight)
+        ? smoothLight
+        : null;
+    if (lighting == null) {
+      // A straight shadow boundary should cross both opposite edges at the
+      // same place, with near-constant brightness on either side.
+      double Function(int, int)? stepLight({required bool acrossX}) {
+        final a = acrossX ? bottomLeft : topRight;
+        final b = acrossX ? topRight : bottomLeft;
+        if ((topLeft - a).abs() > 12 || (b - bottomRight).abs() > 12) {
+          return null;
+        }
+        final first = (topLeft + a) / 2;
+        final second = (b + bottomRight) / 2;
+        if ((first - second).abs() < 56) return null;
+        final length = acrossX ? width : height;
+        final perpendicular = acrossX ? height : width;
+        double edgeAverage(int axis, int offset) {
+          var sum = 0;
+          for (var i = offset; i < offset + band; i++) {
+            sum += acrossX ? gray[i * width + axis] : gray[axis * width + i];
+          }
+          return sum / band;
+        }
+
+        int transition(int offset) {
+          final middle = (first + second) / 2;
+          final goesUp = second > first;
+          for (var i = length ~/ 8; i < 7 * length ~/ 8; i++) {
+            if ((edgeAverage(i, offset) > middle) == goesUp) return i;
+          }
+          return -1;
+        }
+
+        final near = transition(0);
+        final far = transition(perpendicular - band);
+        if (near < 0 || far < 0 || (near - far).abs() > 1) return null;
+        final split = (near + far) / 2;
+        double expected(int x, int y) =>
+            (acrossX ? x : y) < split ? first : second;
+        return matchesBorder(expected) ? expected : null;
+      }
+
+      lighting = stepLight(acrossX: true) ?? stepLight(acrossX: false);
+      if (lighting == null) return false;
     }
     for (var y = 0; y < height; y++) {
       for (var x = 0; x < width; x++) {
         final index = y * width + x;
-        final local = expected(x, y).clamp(40.0, 255.0);
+        final local = lighting(x, y).clamp(40.0, 255.0);
         gray[index] = (gray[index] * reference / local).round().clamp(0, 255);
       }
     }
