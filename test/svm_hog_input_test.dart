@@ -165,11 +165,13 @@ void main() {
         image,
         includePhotoChecks: true,
       ).crops;
-      expect(photos, hasLength(4));
+      expect(photos, hasLength(5));
       expect(photos.first, baseline.first);
       expect(photos.last, baseline.last);
       expect(photos[1], baseline.first.map((pixel) => 255 - pixel));
       expect(photos[2], hasLength(64 * 64));
+      expect(photos[3], hasLength(64 * 64));
+      expect(photos[3], isNot(orderedEquals(photos.first)));
     },
   );
 

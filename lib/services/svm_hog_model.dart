@@ -76,16 +76,28 @@ class SvmHogModel {
   ({String label, List<double> scores, bool accepted}) predictCrops(
     List<Uint8List> crops,
   ) {
-    if (crops.length != 2 && crops.length != 4) {
+    if (crops.length != 2 && crops.length != 4 && crops.length != 5) {
       throw ArgumentError.value(crops.length, 'crops.length');
     }
-    if (crops.length == 4) {
+    if (crops.length > 2) {
       // The photo checks come from the tighter crop: inverted and finer resize.
       final inverted = predict(hog(crops[1]));
       final finer = predict(hog(crops[2]));
       if (inverted.label == finer.label) {
         return (label: finer.label, scores: finer.scores, accepted: true);
       }
+      final tight = predict(hog(crops.first));
+      final wide = predict(hog(crops.last));
+      final accepted = tight.label == wide.label;
+      // Compare more detailed views only when both standard crops agree on a
+      // different letter. An uncertain result stays uncertain.
+      if (accepted && crops.length == 5 && finer.label != tight.label) {
+        final direct = predict(hog(crops[3]));
+        if (direct.label == finer.label) {
+          return (label: finer.label, scores: finer.scores, accepted: true);
+        }
+      }
+      return (label: tight.label, scores: tight.scores, accepted: accepted);
     }
     final tight = predict(hog(crops.first));
     final other = predict(hog(crops.last));

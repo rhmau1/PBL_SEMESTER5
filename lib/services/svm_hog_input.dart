@@ -209,6 +209,16 @@ class SvmHogInput {
           Uint8List.fromList(standard.map((pixel) => 255 - pixel).toList()),
         );
         crops.add(resizeForHog(crop, 40));
+        // Keep the existing decisions for crops whose lighting was corrected.
+        if (spread <= 55) {
+          final direct = img.copyResize(
+            crop,
+            width: 64,
+            height: 64,
+            interpolation: img.Interpolation.average,
+          );
+          crops.add(Uint8List.fromList(direct.getBytes()));
+        }
       }
     }
     return (crops: crops, rejection: null);

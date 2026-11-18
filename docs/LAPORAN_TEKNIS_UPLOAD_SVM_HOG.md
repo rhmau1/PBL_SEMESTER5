@@ -250,3 +250,18 @@ Hasil per foto pada 192 input pembanding tetap sama setelah koreksi. File yang d
 - **Aturan penerimaan.** O, P, dan T tetap ragu. Huruf target juga absen dari prediksi teratas pada empat tampilan standar untuk ketiganya. Melonggarkan keputusan hanya menambah kesalahan pada beberapa foto. Pada uji bayangan di Vivo, P justru diterima sebagai N, sehingga pemulihan segmentasi perlu dinilai bersama jumlah salah yang diterima.
 
 Pengukuran berikutnya perlu memakai foto berlabel dari orang dan sesi baru. Untuk memperbaiki dua tahap yang tersisa, ukur lokalisasi tangan pada latar ramai dan uji ulang SVM pada crop tangan terverifikasi. Jika huruf tetap salah pada crop yang bagus, diperlukan data training yang lebih mewakili foto kamera untuk memperbaiki SVM-HOG.
+
+## 18. Pemeriksaan detail crop pada foto berlatar polos
+
+Pada 24 foto Drive, seluruh crop melewati segmentasi. Perbandingan 96 input produksi di Dart dan scikit-learn 1.6.1 menghasilkan label yang sama. Untuk N, dua crop `28→64` memilih O, sementara crop rapat `40→64` dan resize langsung ke `64×64` memilih N. Penajaman, perubahan kontras, dan koreksi intensitas crop belum memulihkan huruf lain pada batch ini.
+
+Backend kini membuat input tambahan dengan resize langsung ke `64×64` bila variasi intensitas tepi paling tinggi 55. Setelah dua crop standar menerima satu huruf yang berbeda dari prediksi crop `40→64`, backend menjalankan inferensi pada input tambahan. Hasil `40→64` menggantikan pilihan standar jika kedua input detail sepakat. Keputusan untuk foto yang semula ragu tetap ragu. Foto yang perlu koreksi bayangan memakai empat input sebelumnya. Pengujian sebelum pembatasan itu menunjukkan satu foto Q dengan bayangan tajam berubah dari benar menjadi salah.
+
+| Batch | Sebelum (benar / salah / ragu / ditolak) | Sesudah (benar / salah / ragu / ditolak) |
+| --- | ---: | ---: |
+| 24 foto Drive asli, Vivo 1918 dan lokal | 13 / 8 / 3 / 0 | **14 / 7 / 3 / 0** |
+| 24 foto Drive dengan intensitas diturunkan, lokal | 12 / 7 / 5 / 0 | 13 / 6 / 5 / 0 |
+| 24 foto dengan bayangan vertikal tajam di tengah, lokal | 13 / 9 / 2 / 0 | 13 / 9 / 2 / 0 |
+| 7 kontrol negatif, lokal | 0 / 0 / 0 / 7 | 0 / 0 / 0 / 7 |
+
+Pada Vivo, hasil N berubah dari O menjadi N dan K berubah dari U menjadi V. O, P, dan T tetap ragu. Pada total 264 input Drive asli dan hasil transformasi di komputer, ada dua prediksi tambahan yang benar dan setiap prediksi yang semula benar tetap benar. Ke-264 input berasal dari 24 foto sumber yang juga dipakai untuk memilih aturan. Sebanyak 124 tes Flutter lulus.
