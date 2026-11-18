@@ -128,7 +128,17 @@ flutter run
 
 `flutter test` hanya menjalankan berkas di `test/`. Folder `integration_test/`
 tidak dijalankan oleh perintah tersebut dan memerlukan HP Android yang
-terhubung, misalnya `flutter test integration_test -d ID_PERANGKAT`.
+terhubung. Tes UI Kamus dapat dijalankan dengan
+`flutter test integration_test\dictionary_ui_test.dart -d ID_PERANGKAT`;
+tes model seluruh alfabet tersedia di `integration_test/all_letters_model_test.dart`.
+Tes Espresso Android dapat dijalankan dari folder `android` dengan
+`.\gradlew.bat :app:connectedDebugAndroidTest` setelah emulator atau HP Android
+tersedia. Tes ini memastikan `MainActivity` menampilkan `FlutterView`; tes
+interaksi widget Flutter tetap dijalankan melalui `flutter test`.
+Jika Android menampilkan `NoClassDefFoundError` untuk plugin lalu
+`SharedPreferencesApi.getAll` gagal tersambung, bersihkan artefak build dan
+pasang ulang aplikasi dengan `flutter clean`, `flutter pub get`, lalu
+`flutter run`.
 Per 18 Oktober 2026, `flutter analyze` bersih dan `flutter test` menjalankan
 88 kasus dengan 88 lulus. Workflow CI di `.github/workflows/ci.yml` menjalankan
 `flutter analyze` dan `flutter test` pada Ubuntu dengan Flutter 3.47.5.
