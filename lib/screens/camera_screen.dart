@@ -23,6 +23,7 @@ class CameraScreen extends StatefulWidget {
     this.topOverlayHeight = 0,
     this.selectedModel = SignModel.svmHog,
     this.onModelChanged,
+    this.classifyPhoto,
   });
 
   final bool cameraEnabled;
@@ -32,6 +33,7 @@ class CameraScreen extends StatefulWidget {
   final double topOverlayHeight;
   final SignModel selectedModel;
   final ValueChanged<SignModel>? onModelChanged;
+  final Future<SignPrediction> Function(String path)? classifyPhoto;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -39,7 +41,6 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  static const _minimumConfidence = 0.60;
   static final _supportedLabels = 'ABCDEFGHIKLMNOPQRSTUVWXY'.split('');
 
   CameraController? _controller;
@@ -617,13 +618,14 @@ class _CameraScreenState extends State<CameraScreen>
       // classifyFile applies EXIF orientation and model-specific resizing.
       final prediction =
           _photoPrediction ??
-          await SignClassifier.instance.classifyFile(
-            path,
-            model: _selectedModel,
-          );
+          await (widget.classifyPhoto?.call(path) ??
+              SignClassifier.instance.classifyFile(
+                path,
+                model: _selectedModel,
+              ));
       if (!mounted || generation != _photoGeneration) return;
       setState(() => _photoPrediction = prediction);
-      if (prediction.confidence >= _minimumConfidence) {
+      if (prediction.accepted) {
         _isSavingPhotoHistory = true;
         await widget.onResultSaved?.call(
           HistoryItem.fromDetection(
@@ -1149,8 +1151,7 @@ class _CameraScreenState extends State<CameraScreen>
     final prediction = _photoPrediction;
     final busy = _isTakingPhoto || _isClassifyingPhoto || _isSavingPhotoHistory;
     final colors = Theme.of(context).colorScheme;
-    final reliable =
-        prediction != null && prediction.confidence >= _minimumConfidence;
+    final reliable = prediction?.accepted ?? false;
     return ColoredBox(
       key: const PageStorageKey('camera_photo'),
       color: colors.surface,
@@ -1257,13 +1258,14 @@ class _CameraScreenState extends State<CameraScreen>
                               fontWeight: FontWeight.w900,
                             ),
                           ),
-                          Text(
-                            'Keyakinan model ${(prediction.confidence * 100).toStringAsFixed(1)}%',
-                            style: TextStyle(
-                              color: colors.onSurfaceVariant,
-                              fontSize: 13,
+                          if (prediction.confidence != null)
+                            Text(
+                              'Keyakinan model ${prediction.confidenceText}',
+                              style: TextStyle(
+                                color: colors.onSurfaceVariant,
+                                fontSize: 13,
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 8),
                         ],
                         Text(

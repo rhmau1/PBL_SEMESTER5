@@ -1,0 +1,55 @@
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
+import 'package:sign_language/services/sign_classifier.dart';
+import 'package:sign_language/services/svm_hog_input.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('rotates a stride-padded luma frame', () {
+    final input = Uint8List.fromList([1, 2, 99, 3, 4, 99, 5, 6, 99]);
+    final image = SvmHogInput.fromLuma(input, 2, 3, 3, 1, 90)!;
+    expect([image.width, image.height], [3, 2]);
+    expect(image.getBytes(), [5, 3, 1, 6, 4, 2]);
+    expect(SvmHogInput.fromLuma(input, 3, 5, 3, 1, 90), isNull);
+  });
+
+  test('two square crops retain an off-center foreground', () {
+    final image = img.Image(width: 150, height: 120, numChannels: 1);
+    img.fill(image, color: img.ColorUint8.rgb(230, 230, 230));
+    img.fillRect(
+      image,
+      x1: 15,
+      y1: 20,
+      x2: 36,
+      y2: 94,
+      color: img.ColorUint8.rgb(70, 70, 70),
+    );
+    final result = SvmHogInput.handCrops(image);
+    expect(result, hasLength(2));
+    for (final crop in result) {
+      expect(crop, hasLength(64 * 64));
+      expect(crop[32 * 64 + 32], 70);
+      expect(crop[0], 230);
+    }
+  });
+
+  test(
+    'real classifier rejects blank input after loading the bundled asset',
+    () async {
+      final classifier = SignClassifier.instance;
+      await Future.wait([classifier.initialize(), classifier.initialize()]);
+      final prediction = await classifier.classifyLuma(
+        bytes: Uint8List(96 * 96),
+        width: 96,
+        height: 96,
+        stride: 96,
+        pixelStride: 1,
+        rotation: 0,
+      );
+      expect(prediction, isNull);
+    },
+  );
+}

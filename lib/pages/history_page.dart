@@ -264,9 +264,9 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   }
 
   void _showDetails(BuildContext context, HistoryItem item) {
+    final legacyPercent = double.tryParse(item.accuracy.replaceAll('%', ''));
     final confidence =
-        item.confidence ??
-        (double.tryParse(item.accuracy.replaceAll('%', '')) ?? 0) / 100;
+        item.confidence ?? (legacyPercent == null ? null : legacyPercent / 100);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -406,62 +406,64 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
                     const SizedBox(height: 13),
                     const Divider(height: 1, color: Color(0xFFE9EEF6)),
                     const SizedBox(height: 13),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${item.source == 'video' ? 'Rata-rata keyakinan huruf' : 'Keyakinan model'}: ${item.confidenceLabel}',
-                            style: const TextStyle(
-                              color: Color(0xFF2864F0),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        if (confidence >= 0.6)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 9,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEAF0FF),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Text(
-                              'Terdeteksi',
-                              style: TextStyle(
+                    if (confidence != null) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${item.source == 'video' ? 'Rata-rata keyakinan huruf' : 'Keyakinan model'}: ${item.confidenceLabel}',
+                              style: const TextStyle(
                                 color: Color(0xFF2864F0),
-                                fontSize: 10,
+                                fontSize: 14,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 9),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: LinearProgressIndicator(
-                        value: confidence.clamp(0.0, 1.0).toDouble(),
-                        minHeight: 8,
-                        backgroundColor: const Color(0xFFE2E9F3),
-                        color: const Color(0xFF2864F0),
+                          if (confidence >= 0.6)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEAF0FF),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                'Terdeteksi',
+                                style: TextStyle(
+                                  color: Color(0xFF2864F0),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 9),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Keyakinan model adalah skor prediksi, bukan jaminan hasil pasti benar.',
-                        style: TextStyle(
-                          color: Color(0xFF8A9AB5),
-                          fontSize: 11,
-                          fontStyle: FontStyle.italic,
-                          height: 1.4,
+                      const SizedBox(height: 9),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: LinearProgressIndicator(
+                          value: confidence.clamp(0.0, 1.0).toDouble(),
+                          minHeight: 8,
+                          backgroundColor: const Color(0xFFE2E9F3),
+                          color: const Color(0xFF2864F0),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 9),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Keyakinan model adalah skor prediksi, bukan jaminan hasil pasti benar.',
+                          style: TextStyle(
+                            color: Color(0xFF8A9AB5),
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -734,13 +736,15 @@ class _HistoryItemTile extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Keyakinan model: ${item.confidenceLabel}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: muted, fontSize: 10),
-                      ),
+                      if (item.hasConfidence) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          'Keyakinan model: ${item.confidenceLabel}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: muted, fontSize: 10),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -748,31 +752,33 @@ class _HistoryItemTile extends StatelessWidget {
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color:
-                            item.confidence != null && item.confidence! >= 0.75
-                            ? const Color(0xFFE3F8EF)
-                            : const Color(0xFFEAF0FF),
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: Text(
-                        item.confidenceLabel,
-                        style: TextStyle(
+                    if (item.hasConfidence)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
                           color:
                               item.confidence != null &&
                                   item.confidence! >= 0.75
-                              ? const Color(0xFF00A879)
-                              : blue,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                              ? const Color(0xFFE3F8EF)
+                              : const Color(0xFFEAF0FF),
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                        child: Text(
+                          item.confidenceLabel,
+                          style: TextStyle(
+                            color:
+                                item.confidence != null &&
+                                    item.confidence! >= 0.75
+                                ? const Color(0xFF00A879)
+                                : blue,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
                     const SizedBox(height: 4),
                     SizedBox(
                       width: 34,
