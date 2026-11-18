@@ -58,6 +58,7 @@ class TrainingTests(unittest.TestCase):
 
     def test_segmentation_and_hog_contract(self):
         cfg = trainer.default_config()
+        cfg["preprocessing"]["mode"] = "foreground"
         gray = trainer.np.full((160, 120), 240, dtype=trainer.np.uint8)
         gray[30:130, 40:75] = 30
         result = trainer.preprocess(gray, cfg)

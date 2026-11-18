@@ -31,17 +31,21 @@ Official test tetap terpisah. Jumlah aktual dicatat dari CSV, tidak dikarang.
 Gambar identik dikelompokkan. Identitas orang/sesi asli tidak tersedia,
 sehingga pemisahan berdasarkan signer belum dapat dibuktikan.
 
-Preprocessing: EXIF, grayscale, estimasi latar, selisih intensitas,
-Gaussian blur, Otsu, morfologi ringan untuk gambar berukuran cukup besar,
-connected components, crop persegi dengan padding, resize 64x64.
-Mask menentukan area crop. HOG dihitung dari crop grayscale, bukan mask.
+Untuk Sign Language MNIST, input sudah berupa crop grayscale 28x28.
+Preprocessing training menggunakan grayscale lalu resize 64x64. Foreground
+segmentation tidak dipakai pada MNIST karena dapat menolak banyak gambar.
+Mode foreground tetap tersedia untuk foto eksternal, tetapi aturan crop harus
+sama antara data training dan data aplikasi. HOG dihitung dari crop grayscale,
+bukan mask.
 
 Fitur: HOG 9 arah, sel 8x8, blok 2x2, L2-Hys, transform_sqrt.
 Konfigurasi 64x64 ini menghasilkan 1.764 fitur.
 StandardScaler dilatih hanya dari bagian training.
 
-Default membandingkan sampai 10 kandidat: Linear SVM, 6 konfigurasi RBF,
-lalu pembanding Linear dan maksimal 2 RBF dengan augmentasi.
+Default membandingkan sampai 9 kandidat: Linear SVM dan 6 konfigurasi RBF
+tanpa augmentasi, lalu maksimal 2 RBF terbaik dengan augmentasi. Linear SVM
+dengan augmentasi dilewati karena pada dataset ini sangat lambat dan tidak
+diperlukan untuk memilih kandidat awal.
 Augmentasi hanya pada sekitar 35% gambar training per kelas: rotasi,
 pergeseran, skala, pencahayaan, dan blur/noise ringan. Tanpa flip otomatis.
 

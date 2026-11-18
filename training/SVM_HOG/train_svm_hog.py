@@ -49,7 +49,7 @@ def default_config(root="/content/drive/MyDrive/LatihIsyarat_SVM_HOG"):
         "external_test_role": "development", "auto_download_zip": True,
         "validation_folds": 5,
         "preprocessing": {
-            "mode": "foreground", "max_source_side": 512,
+            "mode": "full_frame", "max_source_side": 512,
             "margin_per_side": 0.20, "min_foreground_fraction": 0.02,
             "max_foreground_fraction": 0.95, "second_component_ratio": 0.35,
             "minimum_background_difference": 12,
@@ -65,7 +65,8 @@ def default_config(root="/content/drive/MyDrive/LatihIsyarat_SVM_HOG"):
         "search": {"c_values": [1.0, 10.0, 100.0],
                    "gamma_values": ["scale", 0.001],
                    "augmented_rbf_finalists": 2, "svm_cache_mb": 512,
-                   "linear_max_iter": 20000},
+                   "linear_max_iter": 3000, "linear_tol": 0.001,
+                   "train_augmented_linear": False},
         "evidence": {"correct_per_class": 1, "errors_per_class": 2},
     }
 
@@ -485,7 +486,8 @@ def train_candidates(ctx, features):
         if augmented:
             x = np.concatenate((x, features["augmentation"]["X"]))
             y = np.concatenate((y, features["augmentation"]["y"]))
-        classifier = (LinearSVC(C=c, dual="auto", max_iter=cfg["search"]["linear_max_iter"],
+        classifier = (LinearSVC(C=c, dual=False, tol=cfg["search"].get("linear_tol", 0.001),
+                                max_iter=cfg["search"]["linear_max_iter"],
                                 random_state=cfg["seed"]) if kind == "linear" else
                       SVC(C=c, gamma=gamma, kernel="rbf", cache_size=cfg["search"]["svm_cache_mb"],
                           probability=False, decision_function_shape="ovr"))
@@ -528,7 +530,8 @@ def train_candidates(ctx, features):
         for gamma in cfg["search"]["gamma_values"]:
             baseline_rbf.append(fit_one("rbf", c, gamma))
     if cfg["augmentation"]["enabled"] and len(features["augmentation"]["y"]):
-        fit_one("linear", 1.0, augmented=True)
+        if cfg["search"].get("train_augmented_linear", False):
+            fit_one("linear", 1.0, augmented=True)
         finalists = sorted([r for r in baseline_rbf if r["converged"]],
                             key=lambda r: (-r["validation_macro_f1"], -r["validation_accuracy"], r["model_bytes"]))
         for record in finalists[:cfg["search"]["augmented_rbf_finalists"]]:
