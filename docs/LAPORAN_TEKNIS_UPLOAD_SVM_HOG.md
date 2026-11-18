@@ -195,3 +195,21 @@ Backend foto menguji dua variasi dari crop 1,05×. Variasi pertama membalik inte
 Pada foto asli, hasil Q berubah dari M ke Q dan S berubah dari “Belum yakin” ke S. Hasil ini diperoleh di komputer dari 24 foto Drive yang juga digunakan untuk memilih aturan. Empat variasi sintetis per foto memberikan 120 input, dengan 24 foto sumber. Jalankan probe dengan `--baseline` untuk pembanding dua crop standar atau tanpa opsi untuk aturan terbaru.
 
 Segmentasi latar polos tetap menentukan apakah citra masuk ke SVM. Pada uji sebelumnya, pemeriksaan variasi tepi menolak semua 73 foto pribadi. Evaluasi crop manual pada set tersebut menghasilkan dua huruf benar, 56 salah, dan 15 ragu. Pengujian itu menjadi dasar untuk memisahkan masalah segmentasi dan generalisasi model pada foto asli.
+
+## 16. Koreksi pencahayaan dan verifikasi di Vivo
+
+Backend foto mencoba meratakan pencahayaan ketika variasi intensitas tepi melebihi 55. Sistem mengambil median intensitas di empat sudut dan memperkirakan tingkat pencahayaan pada setiap piksel dengan interpolasi bilinear. Koreksi berjalan jika minimal 90% piksel pada masing-masing tepi berada dalam selisih 12 tingkat intensitas dari perkiraan. Piksel dibagi dengan perkiraan pencahayaan setempat dan dikalikan dengan median tepi, lalu hasilnya diteruskan ke segmentasi dan HOG.
+
+| Set uji | Sebelum (benar / salah / ragu / ditolak sebelum SVM) | Sesudah (benar / salah / ragu / ditolak sebelum SVM) |
+| --- | ---: | ---: |
+| 24 foto Drive asli | 13 / 8 / 3 / 0 | 13 / 8 / 3 / 0 |
+| Gradien horizontal | 0 / 0 / 0 / 24 | 12 / 9 / 3 / 0 |
+| Gradien vertikal | 0 / 0 / 0 / 24 | 12 / 8 / 4 / 0 |
+| Gradien diagonal | 0 / 0 / 0 / 24 | 12 / 10 / 2 / 0 |
+| Bayangan tajam dua sisi | 0 / 0 / 0 / 24 | 0 / 0 / 0 / 24 |
+| Tujuh kontrol negatif | 0 / 0 / 0 / 7 | 0 / 0 / 0 / 7 |
+| 73 foto pribadi berlatar bervariasi | 0 / 0 / 0 / 73 | 0 / 0 / 0 / 73 |
+
+Tabel membandingkan 200 input lokal dengan koreksi dimatikan dan dinyalakan. Kondisi gradien dan bayangan berasal dari transformasi terhadap 24 foto Drive yang sama.
+
+Pada Vivo 1918, build QA commit `13c689f` menghasilkan **13 benar, 8 salah, dan 3 ragu** pada foto asli. Uji Vivo pada 24 turunan gradien horizontal menghasilkan **12 benar, 9 salah, dan 3 ragu**. Kedua batch dijalankan dari tombol **Uji foto Drive**. Pemrosesan rata-rata sekitar 523 ms per foto asli dan 447 ms per foto gradien pada sesi tersebut.
