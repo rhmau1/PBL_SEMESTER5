@@ -869,15 +869,9 @@ class _CameraScreenState extends State<CameraScreen>
         : _validationPredictions;
     final sequence = displayedPredictions.join();
     final validationTotal = _validationPredictions.length;
-<<<<<<< HEAD
     final validationCorrect = _validationPredictions
         .where((label) => label == target)
         .length;
-=======
-    final validationCorrect = target.isEmpty
-        ? 0
-        : _validationPredictions.where((label) => label == target).length;
->>>>>>> 64a063fa631d59cbe2f320dff3f6a5a03b9f1787
     final validationAccuracy = validationTotal == 0
         ? 0.0
         : validationCorrect / validationTotal * 100;
@@ -1444,7 +1438,6 @@ class _CameraScreenState extends State<CameraScreen>
                     width: double.infinity,
                     height: 58,
                     child: FilledButton.icon(
-<<<<<<< HEAD
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF2864F0),
                         foregroundColor: Colors.white,
@@ -1455,8 +1448,6 @@ class _CameraScreenState extends State<CameraScreen>
                           borderRadius: BorderRadius.circular(17),
                         ),
                       ),
-=======
->>>>>>> 64a063fa631d59cbe2f320dff3f6a5a03b9f1787
                       onPressed:
                           !busy && (_controller?.value.isInitialized ?? false)
                           ? _takePhoto

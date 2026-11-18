@@ -3,16 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_language/main.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('UI journey covers all requested screens', (tester) async {
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.clear();
-
     await tester.pumpWidget(
       const ProviderScope(child: MyApp(cameraEnabled: true)),
     );
