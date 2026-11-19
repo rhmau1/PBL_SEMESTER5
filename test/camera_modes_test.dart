@@ -563,7 +563,8 @@ void main() {
         }
         await tester.pump();
         expect(isBusy, isFalse);
-        expect(handDetectionCalls, attempt + 1);
+        // One original detection plus one padded retry for an empty result.
+        expect(handDetectionCalls, (attempt + 1) * 2);
         expect(find.textContaining('Tangan tidak terdeteksi'), findsOneWidget);
         expect(savedResults, isEmpty);
         expect(find.text('Deteksi'), findsOneWidget);

@@ -62,7 +62,7 @@ void main() {
             entry.value(file.path),
             throwsA(isA<HandImageException>()),
           );
-          expect(calls, 1);
+          expect(calls, handCount == 0 ? 2 : 1);
           expect(SignClassifier.instance.isReady, isFalse);
         },
       );
@@ -120,6 +120,72 @@ void main() {
       ),
     );
   });
+
+  test(
+    'padding retry preserves the photo and maps landmarks back to source',
+    () async {
+      var calls = 0;
+      messenger.setMockMethodCallHandler(_channel, (call) async {
+        calls++;
+        final bytes = (call.arguments as Map)['bytes'] as Uint8List;
+        final decoded = img.decodeJpg(bytes)!;
+        if (calls == 1) {
+          expect([decoded.width, decoded.height], [200, 160]);
+          return [];
+        }
+        expect([decoded.width, decoded.height], [250, 210]);
+        expect(decoded.getPixel(0, 0).r, greaterThan(245));
+        expect(decoded.getPixel(100, 100).r, closeTo(100, 5));
+        return [
+          _hand()
+              .map((p) => [(p[0] * 200 + 25) / 250, (p[1] * 160 + 25) / 210])
+              .toList(),
+        ];
+      });
+      final source = img.Image(width: 200, height: 160);
+      img.fill(source, color: img.ColorRgb8(100, 80, 60));
+      final result = await detector.detectWithDetails(source);
+      expect(result.usedPaddingRetry, isTrue);
+      expect(calls, 2);
+      for (var i = 0; i < 21; i++) {
+        expect(result.landmarks[i].dx, closeTo(_hand()[i][0], 1e-12));
+        expect(result.landmarks[i].dy, closeTo(_hand()[i][1], 1e-12));
+      }
+    },
+  );
+
+  test('padding retry rejects landmarks on the artificial border', () async {
+    var calls = 0;
+    messenger.setMockMethodCallHandler(_channel, (_) async {
+      calls++;
+      return calls == 1
+          ? []
+          : [
+              List.generate(21, (_) => [.01, .01]),
+            ];
+    });
+    await expectLater(
+      detector.detect(img.Image(width: 200, height: 160)),
+      throwsA(isA<HandImageException>()),
+    );
+    expect(calls, 2);
+  });
+
+  test(
+    'native errors are reported without retrying a broken detector',
+    () async {
+      var calls = 0;
+      messenger.setMockMethodCallHandler(_channel, (_) async {
+        calls++;
+        throw PlatformException(code: 'hand_detection');
+      });
+      await expectLater(
+        detector.detect(img.Image(width: 200, height: 160)),
+        throwsA(isA<HandImageException>()),
+      );
+      expect(calls, 1);
+    },
+  );
 
   test('both crops follow an off-center hand and remain square', () {
     final image = img.Image(width: 200, height: 160);
