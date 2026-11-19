@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -76,6 +77,11 @@ class _CameraScreenState extends State<CameraScreen>
   // Native camera resources belong to the app, even when navigation destroys
   // this State. A new screen must wait for the old controller's disposal.
   static Future<void>? _cameraLifecycleQueue;
+  HandLandmarkerPlugin? _handLandmarker;
+  StreamSubscription<List<Hand>>? _landmarkSubscription;
+  List<Hand> _latestHands = const [];
+  int _lastHandDetectedAtMs = 0;
+  int _lastMpFeedAtMs = 0;
 
   bool get _isAnalysisActive => _isSessionActive || _isTargetAnalysisActive;
 
@@ -150,6 +156,9 @@ class _CameraScreenState extends State<CameraScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.cameraEnabled && !widget.photoMode) {
+      _initHandLandmarker();
+    }
     if (widget.cameraEnabled) {
       unawaited(_initializeCameras());
     } else {
@@ -319,6 +328,35 @@ class _CameraScreenState extends State<CameraScreen>
       if (_isCurrentCameraRequest(generation)) {
         setState(() => _isInitializing = false);
       }
+    }
+  }
+
+  void _initHandLandmarker() {
+    try {
+      _handLandmarker = HandLandmarkerPlugin.create(
+        numHands: 1,
+        minHandDetectionConfidence: 0.35,
+        delegate: HandLandmarkerDelegate.cpu,
+      );
+    } catch (_) {
+      try {
+        _handLandmarker = HandLandmarkerPlugin.create(
+          numHands: 1,
+          minHandDetectionConfidence: 0.5,
+          delegate: HandLandmarkerDelegate.cpu,
+        );
+      } catch (e) {
+        debugPrint('MediaPipe HandLandmarker gagal dimuat: $e');
+      }
+    }
+    final plugin = _handLandmarker;
+    if (plugin != null) {
+      _landmarkSubscription = plugin.landmarkStream.listen((hands) {
+        _latestHands = hands;
+        if (hands.isNotEmpty) {
+          _lastHandDetectedAtMs = _frameClock.elapsedMilliseconds;
+        }
+      });
     }
   }
 
@@ -500,12 +538,22 @@ class _CameraScreenState extends State<CameraScreen>
     if (!mounted ||
         !_appIsActive ||
         !_isAnalysisActive ||
-        _processingFrame ||
         controller == null ||
-        now - _lastFrameAt < 250 ||
         (cameraImage.format.group != ImageFormatGroup.yuv420 &&
             cameraImage.format.group != ImageFormatGroup.nv21) ||
         cameraImage.planes.isEmpty) {
+      return;
+    }
+    if (now - _lastMpFeedAtMs >= 80) {
+      _lastMpFeedAtMs = now;
+      try {
+        _handLandmarker?.processFrame(
+          cameraImage,
+          controller.description.sensorOrientation,
+        );
+      } catch (_) {}
+    }
+    if (_processingFrame || now - _lastFrameAt < 250) {
       return;
     }
     _lastFrameAt = now;
@@ -526,14 +574,46 @@ class _CameraScreenState extends State<CameraScreen>
         generation == _recognitionGeneration;
     try {
       final luma = image.planes.first;
-      final prediction = await SignClassifier.instance.classifyLuma(
-        bytes: luma.bytes,
-        width: image.width,
-        height: image.height,
-        stride: luma.bytesPerRow,
-        pixelStride: luma.bytesPerPixel ?? 1,
-        rotation: controller.description.sensorOrientation,
-      );
+      final hasFreshMpHand =
+          _latestHands.isNotEmpty &&
+          (_frameClock.elapsedMilliseconds - _lastHandDetectedAtMs) <= 600;
+      SignPrediction? prediction;
+      if (hasFreshMpHand) {
+        final sensorRot = controller.description.sensorOrientation;
+        final landmarks = _latestHands.first.landmarks.map((lm) {
+          return switch (sensorRot) {
+            90 => (x: 1.0 - lm.y, y: lm.x),
+            180 => (x: 1.0 - lm.x, y: 1.0 - lm.y),
+            270 => (x: lm.y, y: 1.0 - lm.x),
+            _ => (x: lm.x, y: lm.y),
+          };
+        }).toList(growable: false);
+        prediction = await SignClassifier.instance.classifyLumaWithLandmarks(
+          bytes: luma.bytes,
+          width: image.width,
+          height: image.height,
+          stride: luma.bytesPerRow,
+          pixelStride: luma.bytesPerPixel ?? 1,
+          rotation: controller.description.sensorOrientation,
+          landmarks: landmarks,
+        );
+        debugPrint(
+          'MP_ORIENT lens=${controller.description.lensDirection.name} '
+          'sensor=${controller.description.sensorOrientation} '
+          'w=(${landmarks[0].x.toStringAsFixed(2)},${landmarks[0].y.toStringAsFixed(2)}) '
+          'm9=(${landmarks[9].x.toStringAsFixed(2)},${landmarks[9].y.toStringAsFixed(2)}) '
+          'pred=${prediction?.label} acc=${prediction?.agreement}',
+        );
+      } else {
+        prediction = await SignClassifier.instance.classifyLuma(
+          bytes: luma.bytes,
+          width: image.width,
+          height: image.height,
+          stride: luma.bytesPerRow,
+          pixelStride: luma.bytesPerPixel ?? 1,
+          rotation: controller.description.sensorOrientation,
+        );
+      }
       if (!isCurrent()) return;
       final label = _stableSign.add(
         prediction?.accepted == true ? prediction!.label : null,
@@ -988,6 +1068,8 @@ class _CameraScreenState extends State<CameraScreen>
   void dispose() {
     _photoGeneration++;
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_landmarkSubscription?.cancel());
+    _handLandmarker?.dispose();
     unawaited(_disposeCamera());
     super.dispose();
   }

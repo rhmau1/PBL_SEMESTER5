@@ -1,35 +1,44 @@
-/// Emits a letter after three matching samples and once per held pose.
+/// Emits a letter when at least 3 of the last 4 frames agree on the same label,
+/// and emits once per held pose until the hand leaves for 2 consecutive frames.
 class StableSign {
-  String? _candidate;
+  final List<String?> _window = [];
   String? _emitted;
-  int _matches = 0;
   int _empty = 0;
 
-  String? get current => _matches >= 3 ? _candidate : null;
+  String? get current {
+    final counts = <String, int>{};
+    for (final item in _window) {
+      if (item == null) continue;
+      final next = (counts[item] ?? 0) + 1;
+      if (next >= 3) return item;
+      counts[item] = next;
+    }
+    return null;
+  }
 
   String? add(String? label, {required bool hasForeground}) {
-    if (label == null) {
-      _candidate = null;
-      _matches = 0;
-      _empty = hasForeground ? 0 : _empty + 1;
-      if (_empty >= 2) _emitted = null;
+    if (!hasForeground && label == null) {
+      _empty++;
+      if (_empty >= 2) {
+        _emitted = null;
+        _window.clear();
+      }
       return null;
     }
     _empty = 0;
-    if (_candidate == label) {
-      if (_matches < 3) _matches++;
-    } else {
-      _candidate = label;
-      _matches = 1;
+    _window.add(label);
+    if (_window.length > 4) {
+      _window.removeAt(0);
     }
-    if (_matches < 3 || _emitted == label) return null;
-    return _emitted = label;
+
+    final winner = current;
+    if (winner == null || _emitted == winner) return null;
+    return _emitted = winner;
   }
 
   void reset() {
-    _candidate = null;
+    _window.clear();
     _emitted = null;
-    _matches = 0;
     _empty = 0;
   }
 }

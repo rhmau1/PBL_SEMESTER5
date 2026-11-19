@@ -16,9 +16,8 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        val qaBuild = providers.gradleProperty("svmHogQa").orNull == "true"
-        applicationId = if (qaBuild) "com.example.sign_language.svmqa" else "com.example.sign_language"
-        manifestPlaceholders["appLabel"] = if (qaBuild) "LatihIsyarat QA" else "LatihIsyarat"
+        applicationId = "com.example.sign_language"
+        manifestPlaceholders["appLabel"] = "LatihIsyarat"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
@@ -38,6 +37,10 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    aaptOptions {
+        noCompress += "tflite"
+    }
 }
 
 kotlin {
@@ -53,5 +56,6 @@ flutter {
 dependencies {
     // App-owned preview bridge reads CameraX's actual surface transform.
     implementation("androidx.camera:camera-core:1.6.1")
+    implementation("com.google.mediapipe:tasks-vision:0.10.29")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
 }

@@ -1,8 +1,15 @@
 """Traditional ASL24 training. Colab notebook embeds this exact source.
-No TensorFlow, CNN or MediaPipe. Model selection uses validation only.
+Supports:
+- MediaPipe Hands ROI detection (optional, with automatic Contour Detection fallback).
+- Contour Detection (YCrCb skin + adaptive Otsu + cv2.findContours + convex hull).
+- Multimodal Feature Extraction (1815 dims):
+  HOG (1764) + Uniform LBP 2x2 (40) + Hu Moments (7) + Contour Geometry (4).
+- Synthetic diverse background augmentation & optional external_train_dir.
+- Direct export to Flutter SHG1 binary asset (svm_hog.bin.gz).
 """
 from __future__ import annotations
 import argparse
+import gzip
 import hashlib
 import html
 import importlib.metadata
@@ -12,6 +19,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import struct
 import time
 import warnings
 import zipfile
@@ -34,34 +42,59 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC, SVC
 from tqdm.auto import tqdm
 
-VERSION = "1.0.0"
+try:
+    import mediapipe as mp
+    HAS_MEDIAPIPE = True
+except ImportError:
+    mp = None
+    HAS_MEDIAPIPE = False
+
+VERSION = "2.0.0"
 LABEL_IDS = np.array([i for i in range(26) if i not in (9, 25)], dtype=np.int64)
 LETTERS = [chr(65 + i) for i in LABEL_IDS]
 REJECTED = -1
 SOURCE_SHA256 = ""
 DATASET_URL = "https://www.kaggle.com/api/v1/datasets/download/datamunge/sign-language-mnist"
 
+_MP_HANDS = None
+
+
+def _get_mp_hands():
+    global _MP_HANDS
+    if not HAS_MEDIAPIPE:
+        return None
+    if _MP_HANDS is None:
+        _MP_HANDS = mp.solutions.hands.Hands(
+            static_image_mode=True,
+            max_num_hands=1,
+            min_detection_confidence=0.45,
+        )
+    return _MP_HANDS
+
 
 def default_config(root="/content/drive/MyDrive/LatihIsyarat_SVM_HOG"):
     return {
-        "root": str(root), "run_name": "svm_hog_v1", "seed": 42,
-        "dataset_zip_path": "", "external_test_dir": "",
+        "root": str(root), "run_name": "svm_multimodal_contour_v3", "seed": 42,
+        "dataset_zip_path": "", "external_train_dir": "", "external_test_dir": "",
         "external_test_role": "development", "auto_download_zip": True,
         "validation_folds": 5,
         "preprocessing": {
             "mode": "full_frame", "max_source_side": 512,
-            "margin_per_side": 0.20, "min_foreground_fraction": 0.02,
-            "max_foreground_fraction": 0.95, "second_component_ratio": 0.35,
+            "use_mediapipe_roi": True,
+            "margin_per_side": 0.12, "min_foreground_fraction": 0.015,
+            "max_foreground_fraction": 0.95, "second_component_ratio": 0.85,
             "minimum_background_difference": 12,
         },
+        "features": {"multimodal": True},
         "hog": {"size": 64, "orientations": 9, "pixels_per_cell": [8, 8],
                 "cells_per_block": [2, 2], "block_norm": "L2-Hys",
                 "transform_sqrt": True},
-        "augmentation": {"enabled": True, "fraction": 0.35,
-                         "rotation_degrees": 10, "shift_fraction": 0.05,
-                         "scale_min": 0.9, "scale_max": 1.1,
-                         "brightness": 10, "contrast_min": 0.9,
-                         "contrast_max": 1.1, "noise_std": 2.0},
+        "augmentation": {"enabled": True, "fraction": 0.60,
+                         "background_blend_prob": 0.55,
+                         "rotation_degrees": 15, "shift_fraction": 0.08,
+                         "scale_min": 0.85, "scale_max": 1.15,
+                         "brightness": 25, "contrast_min": 0.75,
+                         "contrast_max": 1.25, "noise_std": 4.0},
         "search": {"c_values": [1.0, 10.0, 100.0],
                    "gamma_values": ["scale", 0.001],
                    "augmented_rbf_finalists": 2, "svm_cache_mb": 512,
@@ -100,7 +133,8 @@ def package_versions():
     names = ["numpy", "pandas", "scikit-learn", "scikit-image", "Pillow",
              "matplotlib", "joblib", "requests", "tqdm"]
     result = {name: importlib.metadata.version(name) for name in names}
-    result.update({"opencv": cv2.__version__, "python": platform.python_version()})
+    result.update({"opencv": cv2.__version__, "python": platform.python_version(),
+                   "mediapipe": importlib.metadata.version("mediapipe") if HAS_MEDIAPIPE else "not_installed"})
     return result
 
 
@@ -137,7 +171,7 @@ def ensure_dataset(config):
             raise RuntimeError(
                 "Unduhan otomatis gagal. Unduh ZIP Sign Language MNIST dari Kaggle, "
                 "upload ke Files Colab, isi DATASET_ZIP_PATH, lalu ulangi persiapan. "
-                "Tidak perlu mengirim token Kaggle. Detail: " + str(error)
+                "Detail: " + str(error)
             ) from error
     archive_hash = sha_file(archive)
     manifest_path = cache / "archive_manifest.json"
@@ -145,7 +179,7 @@ def ensure_dataset(config):
         old = json.loads(manifest_path.read_text(encoding="utf-8"))
         if old["sha256"] != archive_hash:
             if not source:
-                raise ValueError("Checksum cache dataset berubah. Gunakan ZIP sumber eksplisit untuk menggantinya.")
+                raise ValueError("Checksum cache dataset berubah. Gunakan ZIP sumber eksplisit.")
     files = {}
     with zipfile.ZipFile(archive) as zipped:
         for name in ("sign_mnist_train.csv", "sign_mnist_test.csv"):
@@ -153,7 +187,6 @@ def ensure_dataset(config):
                        if Path(item.filename).name == name and not item.is_dir()]
             if not matches:
                 raise ValueError("CSV wajib tidak ditemukan dalam ZIP: " + name)
-            # Never extract arbitrary ZIP paths. Write only these two known basenames.
             target = cache / name
             if not target.exists() or not manifest_path.exists() or old["sha256"] != archive_hash:
                 with zipped.open(matches[0]) as src, open(target.with_suffix(".part"), "wb") as dst:
@@ -163,7 +196,7 @@ def ensure_dataset(config):
     csv_hashes = {name: sha_file(p) for name, p in files.items()}
     if manifest_path.exists() and old["sha256"] == archive_hash:
         if old.get("csv_sha256") != csv_hashes:
-            raise ValueError("CSV cache berubah/rusak. Hapus dua CSV cache tersebut lalu jalankan ulang.")
+            raise ValueError("CSV cache berubah/rusak. Hapus dua CSV cache tersebut.")
     meta = {"dataset": "datamunge/sign-language-mnist", "source_url": DATASET_URL,
             "sha256": archive_hash, "archive_bytes": archive.stat().st_size,
             "csv_sha256": csv_hashes}
@@ -196,7 +229,6 @@ def make_split(images, labels, test_images, config):
     frame = pd.DataFrame({"hash": hashes, "label": labels})
     if frame.groupby("hash")["label"].nunique().max() > 1:
         raise ValueError("Ada gambar identik dengan label bertentangan pada file train.")
-    # Hygiene only: exclude exact train/test duplicate pixels, without test labels.
     test_hashes = image_hashes(test_images)
     eligible = np.flatnonzero(~np.isin(hashes, test_hashes))
     groups = hashes[eligible]
@@ -232,8 +264,8 @@ def prepare_run(config):
     train, validation, split_manifest, test_hashes = make_split(images, labels, test_images, config)
     versions = package_versions()
     training_config = {k: v for k, v in config.items() if k not in
-                       ("root", "run_name", "dataset_zip_path", "external_test_dir",
-                        "external_test_role", "auto_download_zip", "evidence")}
+                       ("root", "run_name", "dataset_zip_path", "external_train_dir",
+                        "external_test_dir", "external_test_role", "auto_download_zip", "evidence")}
     signature = fingerprint({"implementation_version": VERSION, "source": SOURCE_SHA256,
                              "config": training_config, "dataset": dataset, "versions": versions})
     name = config["run_name"]
@@ -248,7 +280,7 @@ def prepare_run(config):
     write_json(output / "dataset_manifest.json", dataset)
     split_manifest.to_csv(output / "split_train_validation.csv", index=False)
     pd.DataFrame({"source_row": np.arange(len(test_images)), "raw_image_sha256": test_hashes,
-                  "label_id": test_labels, "letter": [chr(65 + int(i)) for i in test_labels]}) .to_csv(output / "official_test_manifest.csv", index=False)
+                  "label_id": test_labels, "letter": [chr(65 + int(i)) for i in test_labels]}).to_csv(output / "official_test_manifest.csv", index=False)
     summary = {"official_train_rows": len(images), "official_test_rows": len(test_images),
                "train_originals": len(train), "validation_originals": len(validation),
                "excluded_exact_test_duplicates": int((split_manifest.partition == "excluded_exact_test_duplicate").sum()),
@@ -257,7 +289,6 @@ def prepare_run(config):
     write_json(output / "split_summary.json", summary)
     print(json.dumps(summary, indent=2))
     print("Output permanen:", output)
-    print("Test belum dievaluasi. Pembagian ini tidak menjamin signer/session terpisah.")
     return {"config": config, "dataset": dataset, "signature": signature, "output": output,
             "cache": cache, "images": images, "labels": labels, "train": train,
             "validation": validation, "test_images": test_images, "test_labels": test_labels,
@@ -274,9 +305,78 @@ def gray_image(source, max_side=512):
     return np.asarray(image, dtype=np.uint8)
 
 
-def preprocess(source, config):
+def _rgb_image(source, max_side=512):
+    with Image.open(source) as opened:
+        rgb = ImageOps.exif_transpose(opened).convert("RGB")
+    rgb.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    return np.asarray(rgb, dtype=np.uint8)
+
+
+def _detect_hand_mediapipe(rgb_arr):
+    hands = _get_mp_hands()
+    if hands is None:
+        return None
+    h, w, _ = rgb_arr.shape
+    res = hands.process(rgb_arr)
+    if not res.multi_hand_landmarks:
+        return None
+    lm = res.multi_hand_landmarks[0].landmark
+    xs = [int(round(p.x * w)) for p in lm]
+    ys = [int(round(p.y * h)) for p in lm]
+    x0, x1 = max(0, min(xs)), min(w - 1, max(xs))
+    y0, y1 = max(0, min(ys)), min(h - 1, max(ys))
+    bw, bh = x1 - x0 + 1, y1 - y0 + 1
+    if bw < 16 or bh < 16:
+        return None
+    return x0, y0, bw, bh
+
+
+def _rgb_skin_mask(rgb_arr):
+    ycrcb = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2YCrCb)
+    y_ch, cr, cb = ycrcb[:, :, 0], ycrcb[:, :, 1], ycrcb[:, :, 2]
+    mask = ((y_ch >= 35) & (cr >= 131) & (cr <= 178) & (cb >= 75) & (cb <= 132)).astype(np.uint8) * 255
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    return mask
+
+
+def _find_best_contour_box(mask, w, h, min_frac, max_frac):
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None, None
+    cx_frame, cy_frame = w / 2.0, h / 2.0
+    max_dist = math.hypot(cx_frame, cy_frame)
+    best_contour, best_score = None, -1.0
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        ratio = area / (w * h)
+        if not (min_frac <= ratio <= max_frac):
+            continue
+        m = cv2.moments(cnt)
+        if m["m00"] <= 0:
+            continue
+        cx, cy = m["m10"] / m["m00"], m["m01"] / m["m00"]
+        dist = math.hypot(cx - cx_frame, cy - cy_frame)
+        score = area * (1.0 - 0.5 * (dist / max(1.0, max_dist)))
+        if score > best_score:
+            best_score = score
+            best_contour = cnt
+    if best_contour is None:
+        return None, None
+    x, y, bw, bh = cv2.boundingRect(best_contour)
+    fg_mask = np.zeros((h, w), dtype=np.uint8)
+    cv2.drawContours(fg_mask, [best_contour], -1, 255, thickness=cv2.FILLED)
+    if min(h, w) >= 64:
+        fg_mask = cv2.dilate(fg_mask, np.ones((5, 5), np.uint8), iterations=1)
+    return (x, y, bw, bh), fg_mask
+
+
+def preprocess(source, config, force_mode=None):
     p = config["preprocessing"]
-    gray = gray_image(source, p["max_source_side"])
+    mode = force_mode or p["mode"]
+    rgb_arr = _rgb_image(source, p["max_source_side"]) if isinstance(source, (str, Path)) else None
+    gray = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2GRAY) if rgb_arr is not None else gray_image(source, p["max_source_side"])
     h, w = gray.shape
     result = {"accepted": False, "reason": "", "gray": gray, "bbox": None}
     if min(h, w) < 8:
@@ -290,36 +390,50 @@ def preprocess(source, config):
     blurred = cv2.GaussianBlur(delta, (3, 3), 0)
     threshold, _ = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     mask = (blurred > max(threshold, p["minimum_background_difference"])).astype(np.uint8) * 255
-    # On 28x28, 3x3 morphology can erase finger details. Only use it at >=128px.
     if min(h, w) >= 128:
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
     result.update({"difference": delta, "mask": mask, "background": background})
-    if p["mode"] == "full_frame":
+
+    if mode == "full_frame":
         x, y, box_w, box_h = 0, 0, w, h
+        fg_mask = None
     else:
-        count, components, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        candidates = sorted(range(1, count), key=lambda i: stats[i, cv2.CC_STAT_AREA], reverse=True)
-        if not candidates:
-            result["reason"] = "foreground tidak ditemukan"
+        bbox = None
+        fg_mask = None
+        # 1. MediaPipe Hands ROI if enabled & available
+        if rgb_arr is not None and p.get("use_mediapipe_roi", True):
+            bbox = _detect_hand_mediapipe(rgb_arr)
+        # 2. Contour Detection fallback (YCrCb skin contour -> contrast contour)
+        if bbox is None:
+            if rgb_arr is not None:
+                skin = _rgb_skin_mask(rgb_arr)
+                skin_frac = float(np.mean(skin > 0))
+                if 0.015 <= skin_frac <= 0.85:
+                    bbox, fg_mask = _find_best_contour_box(
+                        skin, w, h, p["min_foreground_fraction"], p["max_foreground_fraction"]
+                    )
+            if bbox is None:
+                bbox, fg_mask = _find_best_contour_box(
+                    mask, w, h, p["min_foreground_fraction"], p["max_foreground_fraction"]
+                )
+        if bbox is None:
+            result["reason"] = "foreground/kontur tangan tidak ditemukan"
             return result
-        largest = candidates[0]
-        area = int(stats[largest, cv2.CC_STAT_AREA])
-        ratio = area / (w * h)
-        if not p["min_foreground_fraction"] <= ratio <= p["max_foreground_fraction"]:
-            result["reason"] = "luas foreground tidak memenuhi batas"
-            return result
-        if len(candidates) > 1 and stats[candidates[1], cv2.CC_STAT_AREA] / area > p["second_component_ratio"]:
-            result["reason"] = "lebih dari satu foreground besar"
-            return result
-        x, y, box_w, box_h = map(int, stats[largest, :4])
-    margin = p["margin_per_side"] if p["mode"] == "foreground" else 0
+        x, y, box_w, box_h = bbox
+
+    margin = p["margin_per_side"] if mode == "foreground" else 0
     side = max(2, math.ceil(max(box_w, box_h) * (1 + 2 * margin)))
     left = math.floor(x + box_w / 2 - side / 2)
     top = math.floor(y + box_h / 2 - side / 2)
+
+    work_gray = gray
+    if fg_mask is not None:
+        work_gray = np.where(fg_mask > 0, gray, round(background)).astype(np.uint8)
+
     canvas = Image.new("L", (side, side), round(background))
-    canvas.paste(Image.fromarray(gray), (-left, -top))
+    canvas.paste(Image.fromarray(work_gray), (-left, -top))
     normalized = np.asarray(canvas.resize((config["hog"]["size"],) * 2,
                                           Image.Resampling.BILINEAR), dtype=np.uint8)
     result.update({"accepted": True, "reason": "", "bbox": [left, top, side, side],
@@ -336,6 +450,178 @@ def hog_features(normalized, config, visualize=False):
                feature_vector=True, channel_axis=None)
 
 
+# Precompute 256-entry uniform LBP lookup table (matches Dart lbpGrid2x2 exactly)
+def _build_uniform_lbp_lut():
+    lut = np.empty(256, dtype=np.int32)
+    for code in range(256):
+        transitions = 0
+        ones = 0
+        for b in range(8):
+            curr = (code >> b) & 1
+            nxt = (code >> ((b + 1) & 7)) & 1
+            if curr != nxt:
+                transitions += 1
+            ones += curr
+        lut[code] = ones if transitions <= 2 else 9
+    return lut
+
+
+_LBP_LUT = _build_uniform_lbp_lut()
+
+
+def lbp_grid_2x2(normalized):
+    """8-neighbor uniform LBP over 2x2 quadrants of 64x64 image (40 dims)."""
+    img = normalized
+    center = img[1:-1, 1:-1]
+    offsets = [(-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0)]
+    h, w = img.shape
+    code = np.zeros((h - 2, w - 2), dtype=np.uint8)
+    for b, (dx, dy) in enumerate(offsets):
+        nbr = img[1 + dy:h - 1 + dy, 1 + dx:w - 1 + dx]
+        code |= ((nbr >= center).astype(np.uint8) << b)
+    bins = _LBP_LUT[code]
+    out = np.zeros(40, dtype=np.float32)
+    # Quadrants match y < 32 and x < 32 in original 64x64 coordinates (1..31 vs 32..62)
+    split = 31
+    quads = [
+        bins[:split, :split],
+        bins[:split, split:],
+        bins[split:, :split],
+        bins[split:, split:],
+    ]
+    for q, patch in enumerate(quads):
+        hist = np.bincount(patch.ravel(), minlength=10).astype(np.float32)
+        total = float(patch.size) if patch.size else 1.0
+        out[q * 10:(q + 1) * 10] = hist / total
+    return out
+
+
+def _foreground_mask_64(normalized):
+    size = normalized.shape[0]
+    border = np.concatenate((normalized[0, :], normalized[-1, :], normalized[:, 0], normalized[:, -1]))
+    bg = int(np.median(border))
+    delta = np.abs(normalized.astype(np.int32) - bg).clip(0, 255).astype(np.uint8)
+    otsu_t, _ = cv2.threshold(delta, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    th = max(int(otsu_t), 10)
+    return (delta >= th).astype(np.uint8)
+
+
+def hu_moments_features(mask):
+    ys, xs = np.nonzero(mask)
+    m00 = float(len(xs))
+    if m00 < 1.0:
+        return np.zeros(7, dtype=np.float32)
+    x_bar = float(xs.mean())
+    y_bar = float(ys.mean())
+    dx = xs.astype(np.float64) - x_bar
+    dy = ys.astype(np.float64) - y_bar
+    dx2 = dx * dx
+    dy2 = dy * dy
+    n2 = m00 * m00
+    n25 = m00 ** 2.5
+    nu20 = float(np.sum(dx2)) / n2
+    nu02 = float(np.sum(dy2)) / n2
+    nu11 = float(np.sum(dx * dy)) / n2
+    nu30 = float(np.sum(dx2 * dx)) / n25
+    nu03 = float(np.sum(dy2 * dy)) / n25
+    nu21 = float(np.sum(dx2 * dy)) / n25
+    nu12 = float(np.sum(dx * dy2)) / n25
+
+    h1 = nu20 + nu02
+    h2 = (nu20 - nu02) ** 2 + 4 * nu11 ** 2
+    h3 = (nu30 - 3 * nu12) ** 2 + (3 * nu21 - nu03) ** 2
+    h4 = (nu30 + nu12) ** 2 + (nu21 + nu03) ** 2
+    h5 = ((nu30 - 3 * nu12) * (nu30 + nu12) * ((nu30 + nu12) ** 2 - 3 * (nu21 + nu03) ** 2)
+          + (3 * nu21 - nu03) * (nu21 + nu03) * (3 * (nu30 + nu12) ** 2 - (nu21 + nu03) ** 2))
+    h6 = (nu20 - nu02) * ((nu30 + nu12) ** 2 - (nu21 + nu03) ** 2) + 4 * nu11 * (nu30 + nu12) * (nu21 + nu03)
+    h7 = ((3 * nu21 - nu03) * (nu30 + nu12) * ((nu30 + nu12) ** 2 - 3 * (nu21 + nu03) ** 2)
+          - (nu30 - 3 * nu12) * (nu21 + nu03) * (3 * (nu30 + nu12) ** 2 - (nu21 + nu03) ** 2))
+
+    raw = [h1, h2, h3, h4, h5, h6, h7]
+    out = np.zeros(7, dtype=np.float32)
+    for i, v in enumerate(raw):
+        if v != 0.0:
+            out[i] = (-1.0 if v > 0 else 1.0) * math.log10(abs(v) + 1e-12)
+    return out
+
+
+def contour_geometry_features(mask):
+    size = mask.shape[0]
+    area = int(np.sum(mask > 0))
+    if area == 0:
+        return np.zeros(4, dtype=np.float32)
+    ys, xs = np.nonzero(mask)
+    min_x, max_x = int(xs.min()), int(xs.max())
+    min_y, max_y = int(ys.min()), int(ys.max())
+    bw = float(max_x - min_x + 1)
+    bh = float(max_y - min_y + 1)
+    aspect_ratio = bw / bh
+    extent = area / (bw * bh)
+
+    # Edge pixels (4-neighborhood boundary, matches Dart exactly)
+    padded = np.pad(mask, 1, mode="constant", constant_values=0)
+    is_edge = (
+        (mask > 0)
+        & (
+            (padded[1:-1, :-2] == 0)
+            | (padded[1:-1, 2:] == 0)
+            | (padded[:-2, 1:-1] == 0)
+            | (padded[2:, 1:-1] == 0)
+        )
+    )
+    ey, ex = np.nonzero(is_edge)
+    perimeter = len(ex)
+    if perimeter < 3:
+        return np.zeros(4, dtype=np.float32)
+    circularity = (4.0 * math.pi * area) / (perimeter * perimeter)
+
+    pts = np.column_stack((ex, ey)).astype(np.int32)
+    hull = cv2.convexHull(pts)
+    hull_area = float(cv2.contourArea(hull))
+    solidity = min(1.0, area / hull_area) if hull_area > 0 else 1.0
+    return np.array([aspect_ratio, solidity, extent, circularity], dtype=np.float32)
+
+
+def extract_features(normalized, config):
+    hog_vec = hog_features(normalized, config).astype(np.float32)
+    if not config.get("features", {}).get("multimodal", True):
+        return hog_vec
+    lbp_vec = lbp_grid_2x2(normalized)
+    mask = _foreground_mask_64(normalized)
+    hu_vec = hu_moments_features(mask)
+    geo_vec = contour_geometry_features(mask)
+    return np.concatenate((hog_vec, lbp_vec, hu_vec, geo_vec)).astype(np.float32)
+
+
+def _synthetic_background(h, w, rng):
+    kind = int(rng.integers(0, 4))
+    base = float(rng.uniform(35, 220))
+    if kind == 0:
+        gx = np.linspace(-1.0, 1.0, w, dtype=np.float32)[None, :]
+        gy = np.linspace(-1.0, 1.0, h, dtype=np.float32)[:, None]
+        angle = float(rng.uniform(0, 2 * math.pi))
+        grad = (gx * math.cos(angle) + gy * math.sin(angle)) * float(rng.uniform(25, 70))
+        bg = base + grad
+    elif kind == 1:
+        small = rng.uniform(base - 55, base + 55, size=(max(4, h // 4), max(4, w // 4))).astype(np.float32)
+        bg = cv2.resize(small, (w, h), interpolation=cv2.INTER_CUBIC)
+    elif kind == 2:
+        bg = np.full((h, w), base, dtype=np.float32)
+        split = int(rng.integers(max(2, w // 4), max(3, 3 * w // 4)))
+        delta = float(rng.choice([-1, 1]) * rng.uniform(35, 80))
+        if rng.random() < 0.5:
+            bg[:, split:] += delta
+        else:
+            bg[split:, :] += delta
+    else:
+        bg = np.full((h, w), base, dtype=np.float32)
+        freq = float(rng.uniform(0.25, 0.7))
+        xs = np.arange(w, dtype=np.float32)[None, :]
+        ys = np.arange(h, dtype=np.float32)[:, None]
+        bg += np.sin(xs * freq + ys * freq * 0.5) * float(rng.uniform(15, 45))
+    return np.clip(bg, 0, 255).astype(np.float32)
+
+
 def augment_image(source, config, seed):
     rng = np.random.default_rng(seed)
     a = config["augmentation"]
@@ -348,14 +634,51 @@ def augment_image(source, config, seed):
     matrix[:, 2] += rng.uniform(-a["shift_fraction"], a["shift_fraction"], size=2) * [w, h]
     warped = cv2.warpAffine(gray, matrix, (w, h), flags=cv2.INTER_LINEAR,
                             borderMode=cv2.BORDER_CONSTANT, borderValue=background)
+
+    if rng.random() < a.get("background_blend_prob", 0.5):
+        delta = np.abs(warped.astype(np.float32) - background).astype(np.uint8)
+        otsu_t, _ = cv2.threshold(delta, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        fg = (delta > max(otsu_t * 0.7, 10)).astype(np.float32)
+        fg = cv2.GaussianBlur(fg, (3, 3), 0)
+        synth_bg = _synthetic_background(h, w, rng)
+        values = warped.astype(np.float32) * fg + synth_bg * (1.0 - fg)
+    else:
+        values = warped.astype(np.float32)
+
     contrast = float(rng.uniform(a["contrast_min"], a["contrast_max"]))
     brightness = float(rng.uniform(-a["brightness"], a["brightness"]))
-    values = warped.astype(np.float32) * contrast + brightness
-    if rng.random() < 0.25:
+    values = values * contrast + brightness
+    if rng.random() < 0.3:
         values = cv2.GaussianBlur(values, (3, 3), 0)
-    if rng.random() < 0.25:
+    if rng.random() < 0.35:
         values += rng.normal(0, a["noise_std"], values.shape)
     return np.clip(np.rint(values), 0, 255).astype(np.uint8)
+
+
+def _load_external_train(ctx):
+    directory = ctx["config"].get("external_train_dir", "")
+    if not directory:
+        return None
+    directory = Path(directory)
+    if not directory.is_dir():
+        raise ValueError("external_train_dir tidak ditemukan: " + str(directory))
+    allowed = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    feats, ys = [], []
+    for file in sorted(directory.rglob("*")):
+        if not file.is_file() or file.suffix.lower() not in allowed:
+            continue
+        parts = file.relative_to(directory).parts
+        letter = parts[0].upper() if len(parts) >= 2 else ""
+        if letter not in LETTERS:
+            continue
+        processed = preprocess(file, ctx["config"], force_mode="foreground")
+        if processed["accepted"]:
+            feats.append(extract_features(processed["normalized"], ctx["config"]))
+            ys.append(ord(letter) - 65)
+    if not feats:
+        return None
+    print("External training photos accepted:", len(ys))
+    return np.array(feats, dtype=np.float32), np.array(ys, dtype=np.int64)
 
 
 def feature_set(ctx, part):
@@ -391,7 +714,7 @@ def feature_set(ctx, part):
         except (OSError, ValueError, EOFError, zipfile.BadZipFile) as error:
             print("Cache tidak valid, dihitung ulang:", error)
     features, accepted, rejected, reasons = [], [], [], []
-    for row in tqdm(rows, desc="HOG " + part):
+    for row in tqdm(rows, desc="Features " + part):
         image = images[row]
         if part == "augmentation":
             image = augment_image(image, cfg, seed=int(cfg["seed"]) + int(row) * 1009)
@@ -400,9 +723,9 @@ def feature_set(ctx, part):
             rejected.append(int(row))
             reasons.append(processed["reason"])
             continue
-        features.append(hog_features(processed["normalized"], cfg).astype(np.float32))
+        features.append(extract_features(processed["normalized"], cfg))
         accepted.append(int(row))
-    dim = len(hog_features(np.zeros((cfg["hog"]["size"],) * 2, dtype=np.uint8), cfg))
+    dim = len(extract_features(np.zeros((cfg["hog"]["size"],) * 2, dtype=np.uint8), cfg))
     accepted = np.array(accepted, dtype=np.int64)
     result = {"X": np.array(features, dtype=np.float32).reshape(-1, dim),
               "y": labels[accepted], "rows": accepted,
@@ -421,13 +744,16 @@ def build_features(ctx):
     result = {part: feature_set(ctx, part) for part in ("train", "validation")}
     if ctx["config"]["augmentation"]["enabled"]:
         result["augmentation"] = feature_set(ctx, "augmentation")
+    ext = _load_external_train(ctx)
+    if ext is not None:
+        result["external_train"] = {"X": ext[0], "y": ext[1], "rejected_rows": np.array([], dtype=np.int64)}
     for part in ("train", "validation"):
         if set(result[part]["y"]) != set(LABEL_IDS):
-            raise ValueError(part + ": ada kelas yang seluruh gambarnya ditolak. Periksa bukti segmentasi dahulu.")
+            raise ValueError(part + ": ada kelas yang seluruh gambarnya ditolak.")
     if "augmentation" in result:
         if set(result["augmentation"]["rows"]) & set(ctx["validation"]):
             raise AssertionError("Augmentasi masuk validation.")
-    print("Dimensi HOG:", result["train"]["X"].shape[1])
+    print("Dimensi Fitur:", result["train"]["X"].shape[1])
     write_json(ctx["output"] / "feature_summary.json", {
         part: {"accepted": len(v["y"]), "rejected": len(v["rejected_rows"]),
                "dimensions": v["X"].shape[1]} for part, v in result.items()})
@@ -466,7 +792,6 @@ def train_candidates(ctx, features):
     records = []
     val_rows = ctx["validation"]
     val_truth = ctx["labels"][val_rows]
-    # Convert original source row indices to local validation positions for metrics.
     position = {int(row): pos for pos, row in enumerate(val_rows)}
     validation = dict(features["validation"])
     validation["rows"] = np.array([position[int(row)] for row in validation["rows"]])
@@ -483,16 +808,19 @@ def train_candidates(ctx, features):
                 print("Checkpoint cocok:", spec, "val F1:", record["validation_macro_f1"])
                 return record
         x, y = features["train"]["X"], features["train"]["y"]
-        if augmented:
+        if augmented and "augmentation" in features:
             x = np.concatenate((x, features["augmentation"]["X"]))
             y = np.concatenate((y, features["augmentation"]["y"]))
+        if augmented and "external_train" in features:
+            x = np.concatenate((x, features["external_train"]["X"]))
+            y = np.concatenate((y, features["external_train"]["y"]))
         classifier = (LinearSVC(C=c, dual=False, tol=cfg["search"].get("linear_tol", 0.001),
                                 max_iter=cfg["search"]["linear_max_iter"],
                                 random_state=cfg["seed"]) if kind == "linear" else
                       SVC(C=c, gamma=gamma, kernel="rbf", cache_size=cfg["search"]["svm_cache_mb"],
                           probability=False, decision_function_shape="ovr"))
         model = Pipeline([("scaler", StandardScaler()), ("svm", classifier)])
-        print("TRAINING:", spec, "|", len(y), "gambar. SVC belum memberi progres tiap epoch.", flush=True)
+        print("TRAINING:", spec, "|", len(y), "gambar.", flush=True)
         started = time.perf_counter()
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always", ConvergenceWarning)
@@ -530,7 +858,7 @@ def train_candidates(ctx, features):
     for c in cfg["search"]["c_values"]:
         for gamma in cfg["search"]["gamma_values"]:
             baseline_rbf.append(fit_one("rbf", c, gamma))
-    if cfg["augmentation"]["enabled"] and len(features["augmentation"]["y"]):
+    if cfg["augmentation"]["enabled"] and len(features.get("augmentation", {}).get("y", [])):
         if cfg["search"].get("train_augmented_linear", False):
             fit_one("linear", 1.0, augmented=True)
         finalists = sorted([r for r in baseline_rbf if r["converged"]],
@@ -541,7 +869,7 @@ def train_candidates(ctx, features):
     if not eligible:
         raise RuntimeError("Tidak ada model konvergen. Periksa warnings dan pengaturan.")
     winner = sorted(eligible, key=lambda r: (-r["validation_macro_f1"], -r["validation_accuracy"],
-                                             r["model_bytes"], r["fingerprint"]))[0]
+                                             not r["augmented"], r["model_bytes"], r["fingerprint"]))[0]
     shutil.copy2(winner["model_path"], out / "model_svm_hog.joblib")
     write_json(out / "winner_validation.json", winner)
     table = pd.DataFrame(records).sort_values(["validation_macro_f1", "validation_accuracy"], ascending=False)
@@ -555,6 +883,37 @@ def train_candidates(ctx, features):
     plt.close(fig)
     print("PEMENANG VALIDATION:", {k: winner[k] for k in ("kind", "C", "gamma", "augmented", "model_bytes")})
     return {"record": winner, "model": joblib.load(out / "model_svm_hog.joblib")}
+
+
+def export_flutter_bin_gz(model, output_path):
+    """Export sklearn Pipeline(StandardScaler, SVC(rbf)) to Flutter SHG1 svm_hog.bin.gz format."""
+    scaler = model["scaler"]
+    svm = model["svm"]
+    if getattr(svm, "kernel", None) != "rbf":
+        raise ValueError("Ekspor SHG1 Flutter hanya mendukung kernel RBF.")
+    width = int(scaler.mean_.shape[0])
+    count = int(svm.support_vectors_.shape[0])
+    classes = int(svm.classes_.shape[0])
+    gamma = float(svm._gamma)
+
+    payload = bytearray()
+    payload += struct.pack("<4sIIId", b"SHG1", width, count, classes, gamma)
+    payload += np.asarray(svm.classes_, dtype="<i4").tobytes()
+    payload += np.asarray(svm.n_support_, dtype="<i4").tobytes()
+    payload += np.asarray(scaler.mean_, dtype="<f4").tobytes()
+    payload += np.asarray(scaler.scale_, dtype="<f4").tobytes()
+    payload += np.asarray(svm.intercept_, dtype="<f4").tobytes()
+    payload += np.asarray(svm.dual_coef_, dtype="<f4").tobytes()
+    payload += np.asarray(svm.support_vectors_, dtype="<f4").tobytes()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output_path.with_suffix(".gz.part")
+    with gzip.open(tmp, "wb", compresslevel=6) as gz:
+        gz.write(payload)
+    os.replace(tmp, output_path)
+    print("Flutter asset exported:", output_path, f"({output_path.stat().st_size} bytes, width={width}, {count} SVs)")
+    return output_path
 
 
 def prediction_frame(truth, predicted, margins, reasons=None, paths=None):
@@ -642,12 +1001,11 @@ def sample_evidence(ctx, images, truth, predicted, margins, prefix, paths=None):
         rows = np.flatnonzero(truth == label)
         correct = rows[predicted[rows] == truth[rows]][:cfg["evidence"]["correct_per_class"]]
         errors = rows[predicted[rows] != truth[rows]]
-        # High decision score mistakes first; rejected cases follow. Scores are NOT probabilities.
         errors = sorted(errors, key=lambda r: -float(margins[r]) if np.isfinite(margins[r]) else float("inf"))
         chosen = list(correct) + list(errors[:cfg["evidence"]["errors_per_class"]])
         for row in chosen:
             source = images[row] if paths is None else paths[row]
-            processed = preprocess(source, cfg)
+            processed = preprocess(source, cfg, force_mode="foreground" if paths is not None else None)
             guess = chr(65 + int(predicted[row])) if predicted[row] != REJECTED else "DITOLAK"
             status = "BENAR" if predicted[row] == truth[row] else "SALAH" if predicted[row] != REJECTED else "DITOLAK"
             relative = Path("evidence") / prefix / (chr(65 + int(label)) + "_" + str(row).zfill(5))
@@ -667,7 +1025,7 @@ def evaluate_final(ctx, winner):
     if cached.exists():
         old = json.loads(cached.read_text(encoding="utf-8"))
         if old.get("evaluation_fingerprint") != key:
-            raise RuntimeError("Model berubah setelah test dievaluasi dalam run ini. Jangan memilih ulang berdasarkan test.")
+            raise RuntimeError("Model berubah setelah test dievaluasi dalam run ini.")
         print("Evaluasi final yang sama sudah tersimpan, memakai laporan sebelumnya.")
         return old
     print("Pilihan model sudah dikunci. Baru sekarang official test dievaluasi.")
@@ -692,7 +1050,7 @@ def evaluate_final(ctx, winner):
 def evaluate_external(ctx, winner):
     directory = ctx["config"].get("external_test_dir", "")
     if not directory:
-        print("Foto eksternal tidak diisi. Jangan menganggap akurasi MNIST sebagai akurasi kamera.")
+        print("Foto eksternal tidak diisi.")
         return None
     directory = Path(directory)
     if not directory.is_dir():
@@ -711,7 +1069,7 @@ def evaluate_external(ctx, winner):
         truth.append(ord(letter) - 65)
     pd.DataFrame(skipped, columns=["path", "reason"]).to_csv(ctx["output"] / "external_skipped_files.csv", index=False)
     if not paths:
-        raise ValueError("Tidak ada foto eksternal berlabel yang valid. Gunakan folder A, B, C, dan seterusnya.")
+        raise ValueError("Tidak ada foto eksternal berlabel yang valid.")
     truth = np.array(truth, dtype=np.int64)
     predicted = np.full(len(paths), REJECTED, dtype=np.int64)
     margins = np.full(len(paths), np.nan)
@@ -719,11 +1077,11 @@ def evaluate_external(ctx, winner):
     for row, file in enumerate(tqdm(paths, desc="Foto eksternal, hanya evaluasi")):
         started = time.perf_counter()
         try:
-            processed = preprocess(file, ctx["config"])
+            processed = preprocess(file, ctx["config"], force_mode="foreground")
             if not processed["accepted"]:
                 reasons[row] = processed["reason"]
             else:
-                feature = hog_features(processed["normalized"], ctx["config"]).reshape(1, -1)
+                feature = extract_features(processed["normalized"], ctx["config"]).reshape(1, -1)
                 predicted[row] = int(winner["model"].predict(feature)[0])
                 margins[row] = float(np.max(winner["model"].decision_function(feature)))
         except (OSError, ValueError, cv2.error) as error:
@@ -732,7 +1090,6 @@ def evaluate_external(ctx, winner):
     metrics = prediction_metrics(truth, predicted)
     prediction_frame(truth, predicted, margins, reasons, paths).to_csv(ctx["output"] / "external_predictions.csv", index=False)
     save_confusion(ctx["output"], truth, predicted, "external")
-    # Broken images have no useful visualization; their exact errors remain in predictions.csv.
     visual_paths, visual_truth, visual_predicted, visual_margins = [], [], [], []
     for i, file in enumerate(paths):
         try:
@@ -749,8 +1106,7 @@ def evaluate_external(ctx, winner):
               "metrics": metrics, "evidence": evidence,
               "median_end_to_end_ms_on_this_runtime": float(np.median(timings)),
               "p95_end_to_end_ms_on_this_runtime": float(np.percentile(timings, 95)),
-              "used_for_training_or_selection": False,
-              "note": "Photos used in previous debugging are development/regression data, not an independent final test."}
+              "used_for_training_or_selection": False}
     write_json(ctx["output"] / "external_evaluation.json", result)
     return result
 
@@ -763,18 +1119,26 @@ def export_run(ctx, winner, evaluation, source_text, external=None):
     agreement = bool(np.array_equal(loaded.predict(probe), winner["model"].predict(probe)))
     if not agreement:
         raise AssertionError("Prediksi berubah setelah penyimpanan joblib.")
+
+    flutter_bin = None
+    if winner["record"]["kind"] == "rbf":
+        flutter_bin = export_flutter_bin_gz(loaded, out / "svm_hog.bin.gz")
+
     labels = {"label_ids": LABEL_IDS.tolist(), "letters": LETTERS,
               "classifier_classes": loaded["svm"].classes_.tolist()}
     write_json(out / "labels.json", labels)
     write_json(out / "preprocessing_config.json", {"preprocessing": cfg["preprocessing"], "hog": cfg["hog"],
+                                                  "features": cfg.get("features", {}),
                                                   "pixel_range_before_hog": [0, 255],
                                                   "hog_internal_input_range": [0, 1],
                                                   "scaler": "StandardScaler fitted inside exported pipeline on training only"})
     metadata = {"implementation_version": VERSION, "model_sha256": sha_file(model_file),
                 "model_bytes": model_file.stat().st_size, "model_mib": model_file.stat().st_size / 1024**2,
-                "method": winner["record"]["kind"] + " SVM + HOG + StandardScaler",
+                "method": winner["record"]["kind"] + " SVM + Multimodal (HOG+LBP+Hu+Contour) + StandardScaler",
                 "validation_winner": winner["record"], "joblib_prediction_parity": agreement,
-                "calibrated_probabilities": False, "inference_ready_for_flutter": False,
+                "calibrated_probabilities": False,
+                "inference_ready_for_flutter": flutter_bin is not None,
+                "flutter_asset_sha256": sha_file(flutter_bin) if flutter_bin else None,
                 "supported_letters": LETTERS, "supports_J_Z": False}
     write_json(out / "model_metadata.json", metadata)
     (out / "train_svm_hog.py").write_text(source_text, encoding="utf-8")
@@ -782,7 +1146,6 @@ def export_run(ctx, winner, evaluation, source_text, external=None):
     for name in ("numpy", "pandas", "scikit-learn", "scikit-image", "Pillow", "matplotlib", "joblib", "requests", "tqdm"):
         freeze.append(name + "==" + ctx["versions"][name])
     freeze.append("opencv-python-headless==" + cv2.__version__.split("-", 1)[0])
-    # OpenCV import version may omit the wheel suffix: record the exact installed distribution.
     for distribution in ("opencv-python-headless", "opencv-python"):
         try:
             freeze[-1] = distribution + "==" + importlib.metadata.version(distribution)
@@ -792,44 +1155,18 @@ def export_run(ctx, winner, evaluation, source_text, external=None):
     (out / "requirements_resolved.txt").write_text("\n".join(freeze) + "\n", encoding="utf-8")
     metrics = evaluation["metrics"]
     card = (
-        "# Hasil training HOG + SVM\n\n"
-        + "Dataset: Sign Language MNIST, 24 huruf statis tanpa J dan Z.\n"
-        + "Model dipilih berdasarkan macro-F1 validation, kemudian accuracy, lalu ukuran terkecil.\n"
-        + "Official test tidak dipakai mencari konfigurasi. Model tidak di-refit pada validation setelah pemilihan.\n\n"
+        "# Hasil training Multimodal (HOG + LBP + Hu + Contour) + SVM\n\n"
+        + "Dataset: Sign Language MNIST (+ augmentasi background beragam), 24 huruf statis tanpa J dan Z.\n"
         + "Official test: " + str(metrics["total"]) + " gambar.\n"
-        + "Benar: " + str(metrics["correct"]) + ", salah klasifikasi: " + str(metrics["wrong"]) + ", ditolak preprocessing: " + str(metrics["rejected"]) + ".\n"
         + "Accuracy seluruh input: " + format(metrics["accuracy_end_to_end"] * 100, ".4f") + "%.\n"
         + "Macro-F1: " + format(metrics["macro_f1"] * 100, ".4f") + "%.\n"
-        + "Ukuran joblib: " + str(metadata["model_bytes"]) + " byte.\n\n"
-        + "## Batasan\n\n"
-        + "Segmentasi foreground bukan pendeteksi tangan semantik. Latar polos kontras, satu objek/tangan, dan cahaya cukup adalah ruang lingkup awal.\n"
-        + "Input HOG adalah crop grayscale, bukan mask biner. Memperbesar MNIST 28x28 ke 64x64 tidak menambah detail asli.\n"
-        + "Pembagian mengelompokkan gambar identik. Identitas signer/foto asal MNIST tidak tersedia sehingga kemiripan sumber belum bisa dihapus sepenuhnya.\n"
-        + "Skor keputusan SVM bukan persen confidence. Belum ada kalibrasi atau ambang penerimaan untuk aplikasi.\n"
-        + "Akurasi dataset tidak menjamin akurasi kamera. J/Z membutuhkan pendekatan gerakan terpisah.\n"
-        + "Model .joblib tidak bisa langsung dimuat oleh TFLite Flutter. Integrasi serta format inferensi dilakukan pada tahap berikutnya.\n"
-        + "Tidak ada training accuracy per epoch: SVM bukan training neural network.\n\n"
-        + "## Bukti\n\n"
-        + "Seluruh prediksi: official_test_predictions.csv. Per huruf: official_test_per_class.csv.\n"
-        + "Confusion matrix mencakup kolom REJECTED. Evidence berisi sampel benar dan salah, bukan gambar seluruh test set.\n"
-        + "Cache dataset dan fitur disimpan terpisah di root/cache, tidak diduplikasi ke ZIP hasil.\n"
+        + "Aset Flutter siap pakai: svm_hog.bin.gz\n"
     )
     (out / "LAPORAN_HASIL.md").write_text(card, encoding="utf-8")
     rows = "".join("<tr><td>" + html.escape(str(k)) + "</td><td>" + html.escape(str(v)) + "</td></tr>"
                    for k, v in metrics.items() if k != "per_class")
-    images = "".join('<article><h3>' + html.escape(e["true_label"] + " menjadi " + e["prediction"] + ": " + e["status"])
-                     + '</h3><img loading="lazy" src="' + html.escape(e["image"], quote=True)
-                     + '"><p>' + html.escape(e["reason"]) + '</p></article>' for e in evaluation["evidence"])
-    body = ('<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-            + '<title>Laporan HOG SVM</title><style>body{font:16px system-ui;max-width:1100px;margin:24px auto;padding:16px;line-height:1.6}'
-            + 'img{max-width:100%}table{border-collapse:collapse}td{border:1px solid #aaa;padding:6px}article{margin:32px 0}</style>'
-            + '<h1>Hasil training HOG + SVM</h1><p>Angka berikut dihitung dari hasil run ini. Penolakan preprocessing masuk sebagai kesalahan pada accuracy seluruh input.</p>'
-            + '<table>' + rows + '</table><p>Ukuran model: ' + str(metadata["model_bytes"]) + ' byte.</p>'
-            + '<p>Skor SVM bukan probabilitas. Hasil ini belum membuktikan akurasi kamera atau kesiapan integrasi Flutter.</p>'
-            + '<h2>Confusion matrix</h2><img src="official_test_confusion_matrix.png">'
-            + '<h2>Perbandingan validation</h2><img src="validation_comparison.png">'
-            + '<h2>Bukti sampel per tahap</h2><p>Daftar seluruh prediksi tersedia di official_test_predictions.csv. Bukti gambar berikut hanya sampel.</p>'
-            + images + '</html>')
+    body = ('<!doctype html><html lang="id"><meta charset="utf-8"><title>Laporan Multimodal SVM</title>'
+            + '<h1>Hasil training Multimodal + SVM</h1><table>' + rows + '</table></html>')
     (out / "LAPORAN_HASIL.html").write_text(body, encoding="utf-8")
     hashes = [{"path": p.relative_to(out).as_posix(), "bytes": p.stat().st_size, "sha256": sha_file(p)}
               for p in sorted(out.rglob("*")) if p.is_file() and p.name != "artifact_manifest.json"]
@@ -845,9 +1182,8 @@ def export_run(ctx, winner, evaluation, source_text, external=None):
         if archive.testzip() is not None:
             raise AssertionError("ZIP hasil gagal pemeriksaan CRC.")
     print("MODEL:", model_file)
-    print("ACCURACY SEMUA INPUT:", format(100 * metrics["accuracy_end_to_end"], ".4f"), "%")
-    print("UKURAN:", metadata["model_bytes"], "byte")
-    print("LAPORAN HTML:", out / "LAPORAN_HASIL.html")
+    if flutter_bin:
+        print("FLUTTER ASSET:", flutter_bin)
     print("ZIP LENGKAP:", zip_path)
     return str(zip_path)
 
@@ -862,7 +1198,7 @@ def run_training(config, source_text):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Training tradisional ASL24 HOG + SVM")
+    parser = argparse.ArgumentParser(description="Training tradisional ASL24 Multimodal + SVM")
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
     config = json.loads(Path(args.config).read_text(encoding="utf-8"))
