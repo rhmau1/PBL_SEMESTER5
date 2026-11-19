@@ -1266,9 +1266,15 @@ class _CameraScreenState extends State<CameraScreen>
         : _validationPredictions;
     final sequence = displayedPredictions.join();
     final validationTotal = _validationPredictions.length;
+<<<<<<< HEAD
+    final validationCorrect = _validationPredictions
+        .where((label) => label == target)
+        .length;
+=======
     final validationCorrect = target.isEmpty
         ? 0
         : _validationPredictions.where((label) => label == target).length;
+>>>>>>> 64a063fa631d59cbe2f320dff3f6a5a03b9f1787
     final validationAccuracy = validationTotal == 0
         ? 0.0
         : validationCorrect / validationTotal * 100;
@@ -1961,20 +1967,23 @@ class _CameraScreenState extends State<CameraScreen>
                     width: double.infinity,
                     height: 58,
                     child: FilledButton.icon(
-                      onPressed: !busy
-                          ? _cameraError != null
-                                ? _initializeCameras
-                                : (_controller?.value.isInitialized ?? false)
-                                ? _takePhoto
-                                : null
-                          : null,
+<<<<<<< HEAD
                       style: FilledButton.styleFrom(
                         backgroundColor: colors.primary,
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFF2864F0)
+                            .withValues(alpha: 0.5),
+                        disabledForegroundColor: Colors.white70,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(17),
                         ),
                       ),
+=======
+>>>>>>> 64a063fa631d59cbe2f320dff3f6a5a03b9f1787
+                      onPressed:
+                          !busy && (_controller?.value.isInitialized ?? false)
+                          ? _takePhoto
+                          : null,
                       icon: const Icon(Icons.camera_alt_rounded),
                       label: Text(
                         _isTakingPhoto
