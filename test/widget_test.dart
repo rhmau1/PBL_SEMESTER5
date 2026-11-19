@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_language/main.dart';
 import 'package:sign_language/models/history_item.dart';
 import 'package:sign_language/providers/history_provider.dart';
@@ -35,6 +36,7 @@ class _ShellHistoryStore implements HistoryStore {
 }
 
 Future<void> _showApp(WidgetTester tester, {_ShellHistoryStore? store}) async {
+  SharedPreferences.setMockInitialValues({'onboarding_completed': true});
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -43,6 +45,7 @@ Future<void> _showApp(WidgetTester tester, {_ShellHistoryStore? store}) async {
       child: const MyApp(cameraEnabled: false),
     ),
   );
+  await tester.pump(const Duration(seconds: 2));
   await tester.pumpAndSettle();
 }
 

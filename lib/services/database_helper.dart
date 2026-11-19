@@ -10,7 +10,7 @@ abstract interface class HistoryStore {
   Future<int> deleteAllHistory();
 }
 
-/// Penyimpanan lokal. Migrasi v2 menambah metadata tanpa membuang riwayat lama.
+/// Penyimpanan lokal. Migrasi menambah metadata tanpa membuang riwayat lama.
 class DatabaseHelper implements HistoryStore {
   static final DatabaseHelper instance = DatabaseHelper._init();
   Future<Database>? _openingDatabase;
@@ -24,7 +24,7 @@ class DatabaseHelper implements HistoryStore {
       final dbPath = await getDatabasesPath();
       return await openDatabase(
         join(dbPath, 'sign_language_history.db'),
-        version: 2,
+        version: 4,
         onCreate: (db, _) async {
           await db.execute('''
             CREATE TABLE history (
@@ -35,6 +35,7 @@ class DatabaseHelper implements HistoryStore {
               time TEXT NOT NULL,
               confidence REAL,
               source TEXT NOT NULL DEFAULT 'unknown',
+              model_id TEXT,
               image_path TEXT,
               video_path TEXT
             )
@@ -48,6 +49,15 @@ class DatabaseHelper implements HistoryStore {
             );
             await db.execute('ALTER TABLE history ADD COLUMN image_path TEXT');
             await db.execute('ALTER TABLE history ADD COLUMN video_path TEXT');
+          }
+          if (oldVersion < 3) {
+            await db.execute('ALTER TABLE history ADD COLUMN model_id TEXT');
+          }
+          if (oldVersion < 4) {
+            await db.execute(
+              "UPDATE history SET model_id = 'camera_robust_v1' "
+              "WHERE model_id IS NULL OR TRIM(model_id) = ''",
+            );
           }
         },
       );

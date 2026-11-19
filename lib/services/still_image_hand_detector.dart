@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
-import 'image_preprocessor.dart';
+import 'svm_hog_input.dart';
 
 class HandImageException implements Exception {
   const HandImageException(this.message);
@@ -15,7 +15,7 @@ class HandImageException implements Exception {
   String toString() => message;
 }
 
-/// MediaPipe IMAGE mode, independent of the camera's LIVE_STREAM detector.
+/// MediaPipe IMAGE mode adapted from main branch, independent of live camera detector.
 class StillImageHandDetector {
   const StillImageHandDetector();
 
@@ -68,9 +68,10 @@ class StillImageHandDetector {
 }
 
 img.Image _decodeStillImage(String path) {
-  final image = ImagePreprocessor.decodeFileBytes(File(path).readAsBytesSync());
-  // Preserve the entire upright image and its aspect ratio. Landmarks and CNN
-  // crops use the same coordinates; photo EXIF is applied exactly once.
+  final image = SvmHogInput.decode(File(path).readAsBytesSync());
+  if (image == null) {
+    throw const HandImageException('Format gambar tidak dapat dibaca.');
+  }
   final longest = image.width > image.height ? image.width : image.height;
   if (longest <= 1024) return image;
   return img.copyResize(

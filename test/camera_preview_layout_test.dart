@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:sign_language/services/camera_preview_size.dart';
 import 'package:sign_language/widgets/full_bleed_camera_preview.dart';
 
 const _viewportKey = ValueKey('preview-viewport');
@@ -129,6 +130,57 @@ void _expectUndistortedCover(
 }
 
 void main() {
+  for (final direction in [
+    CameraLensDirection.front,
+    CameraLensDirection.back,
+  ]) {
+    testWidgets(
+      '${direction.name}: clearing transition geometry keeps recording portrait',
+      (tester) async {
+        final controller = _PreviewController(direction);
+        addTearDown(controller.dispose);
+        const viewport = Size(360, 580);
+        final geometry = CameraPreviewGeometry(
+          bufferSize: const Size(720, 480),
+          cropRect: const Rect.fromLTRB(0, 0, 720, 480),
+          rotationDegrees: 0,
+          mirrored: direction == CameraLensDirection.front,
+          handlesCropAndRotation: false,
+          hasCameraTransform: false,
+        );
+        cameraPreviewGeometry(controller).value = geometry;
+        await _mount(tester, controller, viewport);
+
+        invalidateCameraPreviewGeometry(controller);
+        controller.value = _state(
+          controller.description,
+          captureOrientation: DeviceOrientation.portraitUp,
+          recording: true,
+          recordingOrientation: DeviceOrientation.portraitUp,
+          streaming: true,
+        );
+        await tester.pump();
+        _expectUndistortedCover(
+          tester,
+          viewport: viewport,
+          source: const Size(480, 720),
+        );
+
+        invalidateCameraPreviewGeometry(controller);
+        controller.value = _state(
+          controller.description,
+          captureOrientation: DeviceOrientation.portraitUp,
+        );
+        await tester.pump();
+        _expectUndistortedCover(
+          tester,
+          viewport: viewport,
+          source: const Size(480, 720),
+        );
+      },
+    );
+  }
+
   for (final direction in [
     CameraLensDirection.front,
     CameraLensDirection.back,

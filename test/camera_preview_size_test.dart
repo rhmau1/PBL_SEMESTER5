@@ -130,6 +130,33 @@ void main() {
   );
 
   test(
+    'invalidating geometry drops stale and in-flight preview transforms',
+    () async {
+      final oldResponse = Completer<Object?>();
+      final oldRequested = Completer<void>();
+      readGeometry = (_) {
+        oldRequested.complete();
+        return oldResponse.future;
+      };
+      final pending = synchronizeCameraPreviewSize(
+        controller,
+        isCurrent: () => true,
+      );
+      await oldRequested.future;
+
+      invalidateCameraPreviewGeometry(controller);
+      expect(cameraPreviewGeometry(controller).value, isNull);
+      oldResponse.complete(_nativeGeometry(rotation: 0));
+      await pending;
+      expect(cameraPreviewGeometry(controller).value, isNull);
+
+      readGeometry = (_) async => _nativeGeometry(rotation: 90);
+      await synchronizeCameraPreviewSize(controller, isCurrent: () => true);
+      expect(cameraPreviewGeometry(controller).value!.rotationDegrees, 90);
+    },
+  );
+
+  test(
     'recording reconfiguration replaces geometry, not previewSize',
     () async {
       for (final size in [

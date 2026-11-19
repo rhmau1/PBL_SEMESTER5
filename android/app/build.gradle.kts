@@ -17,6 +17,7 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.sign_language"
+        manifestPlaceholders["appLabel"] = "LatihIsyarat"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
@@ -55,8 +56,6 @@ flutter {
 dependencies {
     // App-owned preview bridge reads CameraX's actual surface transform.
     implementation("androidx.camera:camera-core:1.6.1")
-    implementation("com.google.mediapipe:tasks-vision:1.0.0")
+    implementation("com.google.mediapipe:tasks-vision:0.10.29")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
-    // MediaPipe Tasks Vision for StillImageHandLandmarker
-    implementation("com.google.mediapipe:tasks-vision:1.0.0")
 }

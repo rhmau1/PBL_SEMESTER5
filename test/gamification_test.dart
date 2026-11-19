@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_language/main.dart';
 import 'package:sign_language/models/gamification_progress.dart';
 import 'package:sign_language/models/history_item.dart';
@@ -24,6 +25,10 @@ class _FakeHistoryStore implements HistoryStore {
 }
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({'onboarding_completed': true});
+  });
+
   group('GamificationProgress Unit Tests', () {
     test('empty history gives 0 progress and 0 badges', () {
       final progress = GamificationProgress.fromHistory([]);
@@ -241,6 +246,7 @@ void main() {
       await tester.pumpWidget(
         const ProviderScope(child: MyApp(cameraEnabled: false)),
       );
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       await tester.drag(find.byType(ListView), const Offset(0, -350));
@@ -262,6 +268,7 @@ void main() {
       await tester.pumpWidget(
         const ProviderScope(child: MyApp(cameraEnabled: false)),
       );
+      await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
       final headerBadge = find.byTooltip('Progres Belajar & Badges');

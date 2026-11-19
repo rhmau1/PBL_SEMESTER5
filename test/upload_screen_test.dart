@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:sign_language/models/history_item.dart';
 import 'package:sign_language/models/sign_prediction.dart';
 import 'package:sign_language/screens/upload_screen.dart';
-import 'package:sign_language/services/still_image_hand_detector.dart';
 
 SignPrediction prediction(String label, double confidence) => SignPrediction(
   label: label,
@@ -27,7 +26,7 @@ void main() {
           pickFiles: (_) async => [XFile('no_hand.png'), XFile('hand.png')],
           classifyFile: (path) async {
             if (path == 'no_hand.png') {
-              throw const HandImageException('Tangan tidak terdeteksi.');
+              throw const FormatException('Tangan tidak terdeteksi.');
             }
             return prediction('C', 0.95);
           },
@@ -38,6 +37,13 @@ void main() {
     );
     await tester.tap(find.text('Banyak gambar'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Pilih banyak gambar'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('Tangan tidak terdeteksi'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('Tangan tidak terdeteksi'), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('upload-letters'))).data,
