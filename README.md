@@ -129,7 +129,6 @@ cd D:\PBL_SEMESTER5
 flutter pub get
 flutter analyze
 flutter test
-flutter devices
 flutter run
 ```
 

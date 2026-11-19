@@ -1,0 +1,17 @@
+{
+  "model_name": "RBF SVM augmented",
+  "kind": "rbf",
+  "C": 100.0,
+  "gamma": "scale",
+  "augmented": true,
+  "model_bytes": 79338426,
+  "model_mib": 75.66,
+  "validation_accuracy": 1.0,
+  "validation_macro_f1": 1.0,
+  "train_examples": 29651,
+  "official_test_not_evaluated": true,
+  "real_photo_original_accuracy_pct": 25.0,
+  "real_photo_all_variants_accuracy_pct": 21.875,
+  "supports_J_Z": false,
+  "source_model": "07_rbf_C100.0_gamma_scale_augmented.joblib"
+}

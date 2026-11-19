@@ -88,15 +88,15 @@ class GuidePage extends StatelessWidget {
               subItems: const [
                 _SubItemData(
                   title: 'Mode Latihan Bebas',
-                  description: 'Tekan Mulai latihan bebas untuk merangkai huruf. Sebelum memperagakan J/Z, tekan Mulai J/Z, lakukan satu gerakan lengkap, lalu Selesai gerakan. Turunkan tangan sebelum melanjutkan huruf berikutnya. Hasil tampil saat sesi diakhiri.',
+                  description: 'Peragakan gerakan huruf secara bebas tanpa batas waktu. Sistem akan mengenali dan merangkai huruf demi huruf yang berhasil diperagakan secara berkelanjutan.',
                 ),
                 _SubItemData(
                   title: 'Mode Uji per Huruf',
-                  description: 'Pilih huruf target melalui dropdown. Untuk 24 huruf statis, deteksi berjalan otomatis. Untuk J/Z, tekan Mulai gerakan, peragakan lengkap, lalu Selesai gerakan. Hasil dibandingkan dengan target tanpa mengganti huruf yang dikenali.',
+                  description: 'Pilih satu huruf target yang ingin diuji melalui menu dropdown (misal: Huruf A). Sistem memvalidasi apakah bentuk tangan Anda sudah sesuai dengan target tersebut.',
                 ),
                 _SubItemData(
-                  title: '26 Huruf ASL: Pose dan Gerakan',
-                  description: 'CNN mengenali 24 huruf dari pose tangan. Model gerakan terpisah mengenali J dan Z melalui beberapa frame video. Gerakan yang tidak jelas atau tidak dikenali perlu diulang dan tidak menambah huruf.',
+                  title: '24 Abjad Didukung (Tanpa J & Z)',
+                  description: 'Deteksi mencakup 24 huruf alfabet statis. J dan Z memerlukan pengenalan gerakan tangan.',
                   isHighlight: true,
                 ),
               ],
@@ -109,7 +109,7 @@ class GuidePage extends StatelessWidget {
               iconColor: Color(0xFF00A879),
               iconBgColor: Color(0xFFE8F8F3),
               title: 'Deteksi dari Foto (Mode Foto)',
-              description: 'Ambil foto untuk mengenali satu dari 24 huruf statis beserta keyakinan model. J dan Z membutuhkan gerakan, sehingga gunakan menu Video.',
+              description: 'Ambil foto pose tangan dengan tombol rana, lalu ketuk Deteksi. Aplikasi menampilkan huruf jika prediksi crop sepakat.',
             ),
             const SizedBox(height: 14),
 
@@ -119,7 +119,7 @@ class GuidePage extends StatelessWidget {
               iconColor: Color(0xFF8E44AD),
               iconBgColor: Color(0xFFF4ECF7),
               title: 'Deteksi dari Upload Gambar',
-              description: 'Unggah satu atau banyak foto tangan untuk 24 huruf statis. Setiap foto dinilai sendiri. Kumpulan foto bukan rekaman gerakan J/Z.',
+              description: 'Unggah foto tangan dari galeri perangkat Anda. Mendukung upload satu gambar maupun banyak gambar sekaligus (batch) untuk evaluasi cepat.',
             ),
             const SizedBox(height: 14),
 
@@ -129,7 +129,7 @@ class GuidePage extends StatelessWidget {
               iconColor: Color(0xFFE67E22),
               iconBgColor: Color(0xFFFDF2E9),
               title: 'Riwayat Deteksi Otomatis',
-              description: 'Hasil latihan bebas, foto, upload, serta gerakan J/Z yang diterima disimpan ke Riwayat Deteksi. Gerakan ditolak tidak disimpan. Uji target huruf statis tetap menampilkan hasil langsung tanpa menyimpan setiap frame.',
+              description: 'Setiap kali Anda selesai melakukan deteksi (baik melalui video, foto, maupun upload), hasilnya akan otomatis tersimpan ke halaman Riwayat Deteksi. Anda dapat membuka kembali rekaman latihan, melihat tanggal, sumber deteksi, dan skor keyakinan kapan saja.',
             ),
             const SizedBox(height: 14),
 
@@ -165,11 +165,11 @@ class GuidePage extends StatelessWidget {
                 ),
                 _SubItemData(
                   title: 'Perfect',
-                  description: 'Didapat setelah melatih sedikitnya 24 huruf berbeda. Syarat lama tetap berlaku, sedangkan progres alfabet lengkap memiliki target 26 huruf.',
+                  description: 'Didapat saat sudah melatih seluruh 24 huruf alfabet yang didukung.',
                 ),
                 _SubItemData(
                   title: 'Impossible (Tingkat Tertinggi)',
-                  description: 'Didapat setelah melatih sedikitnya 24 huruf berbeda dan mencapai 7 hari latihan berturut-turut.',
+                  description: 'Didapat jika berhasil menguasai seluruh huruf sekaligus mencapai 7-day streak latihan berturut-turut.',
                   isHighlight: true,
                 ),
               ],

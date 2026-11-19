@@ -48,5 +48,5 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# Private iPhone experiment. Transfer this folder manually to a Mac.
+# Preserve the local iOS experiment from rama without including it here.
 /ios/
