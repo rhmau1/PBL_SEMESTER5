@@ -13,7 +13,7 @@ class UploadScreen extends StatefulWidget {
     super.key,
     this.onResultSaved,
     this.onBusyChanged,
-    this.selectedModel = SignModel.modelC,
+    this.selectedModel = SignModel.svmHog,
     this.onModelChanged,
     this.pickFiles,
     this.classifyFile,
@@ -33,7 +33,6 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  static const _minimumConfidence = 0.60;
   final _picker = ImagePicker();
   final _results = <_UploadResult>[];
   bool _isProcessing = false;
@@ -98,7 +97,7 @@ class _UploadScreenState extends State<UploadScreen> {
         }
         if (!mounted) return;
         if (prediction != null &&
-            prediction.confidence >= _minimumConfidence &&
+            prediction.accepted &&
             widget.onResultSaved != null) {
           try {
             path = await (widget.saveImage ?? _saveImage)(file);
@@ -157,235 +156,240 @@ class _UploadScreenState extends State<UploadScreen> {
         child: CustomScrollView(
           key: const PageStorageKey('upload'),
           slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-          sliver: SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Expanded(
-                      child: Text(
-                        'Uji Gambar',
-                        style: TextStyle(
-                          color: ink,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Uji Gambar',
+                            style: TextStyle(
+                              color: ink,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
                         ),
-                      ),
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEAF0FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.info_outline_rounded,
+                            color: blue,
+                            size: 22,
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Pilih foto tangan untuk menguji deteksi abjad isyarat. Pastikan posisi jari jelas dan pencahayaan cukup.',
+                      style: TextStyle(color: Color(0xFF52627D), height: 1.5),
+                    ),
+                    const SizedBox(height: 18),
                     Container(
-                      width: 42,
-                      height: 42,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEAF0FF),
-                        shape: BoxShape.circle,
+                      key: const ValueKey('upload-model-selector'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 4,
                       ),
-                      child: const Icon(
-                        Icons.info_outline_rounded,
-                        color: blue,
-                        size: 22,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: const Color(0xFFDCE4F1)),
+                        borderRadius: BorderRadius.circular(15),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Pilih foto tangan untuk menguji deteksi abjad isyarat. Pastikan posisi jari jelas dan pencahayaan cukup.',
-                  style: TextStyle(color: Color(0xFF52627D), height: 1.5),
-                ),
-                const SizedBox(height: 18),
-                Container(
-                  key: const ValueKey('upload-model-selector'),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: const Color(0xFFDCE4F1)),
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.memory_rounded, color: blue),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'Model AI',
-                          style: TextStyle(
-                            color: ink,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      DropdownButton<SignModel>(
-                        key: const ValueKey('upload-model-dropdown'),
-                        value: widget.selectedModel,
-                        underline: const SizedBox.shrink(),
-                        items: SignModel.values
-                            .map(
-                              (model) => DropdownMenuItem(
-                                value: model,
-                                child: Text(model.name),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: _isProcessing
-                            ? null
-                            : (model) {
-                                if (model != null) {
-                                  widget.onModelChanged?.call(model);
-                                }
-                              },
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _multipleImages
-                              ? Colors.white
-                              : blue,
-                          foregroundColor: _multipleImages ? ink : Colors.white,
-                          minimumSize: const Size(0, 52),
-                          side: BorderSide(
-                            color: _multipleImages
-                                ? const Color(0xFFDCE4F1)
-                                : Colors.transparent,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        onPressed: _isProcessing
-                            ? null
-                            : () => setState(() => _multipleImages = false),
-                        icon: const Icon(Icons.image_outlined),
-                        label: const Text('Satu gambar'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: _multipleImages
-                              ? blue
-                              : Colors.white,
-                          foregroundColor: _multipleImages ? Colors.white : ink,
-                          minimumSize: const Size(0, 52),
-                          side: BorderSide(
-                            color: _multipleImages
-                                ? Colors.transparent
-                                : const Color(0xFFDCE4F1),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        onPressed: _isProcessing
-                            ? null
-                            : () => setState(() => _multipleImages = true),
-                        icon: const Icon(Icons.photo_library_outlined),
-                        label: const Text('Banyak gambar'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF8E9),
-                    border: Border.all(color: const Color(0xFFFFDF83)),
-                    borderRadius: BorderRadius.circular(17),
-                  ),
-                  child: const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.lightbulb_rounded,
-                        color: Color(0xFFE7A514),
-                        size: 22,
-                      ),
-                      SizedBox(width: 11),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Tips hasil akurat',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.memory_rounded, color: blue),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Model AI',
                               style: TextStyle(
                                 color: ink,
-                                fontWeight: FontWeight.w800,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Gunakan satu tangan dengan seluruh jari terlihat dan latar belakang sederhana.',
-                              style: TextStyle(
-                                color: muted,
-                                fontSize: 12,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                          DropdownButton<SignModel>(
+                            key: const ValueKey('upload-model-dropdown'),
+                            value: widget.selectedModel,
+                            underline: const SizedBox.shrink(),
+                            items: SignModel.values
+                                .map(
+                                  (model) => DropdownMenuItem(
+                                    value: model,
+                                    child: Text(model.name),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: _isProcessing
+                                ? null
+                                : (model) {
+                                    if (model != null) {
+                                      widget.onModelChanged?.call(model);
+                                    }
+                                  },
+                          ),
+                        ],
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _multipleImages
+                                  ? Colors.white
+                                  : blue,
+                              foregroundColor: _multipleImages
+                                  ? ink
+                                  : Colors.white,
+                              minimumSize: const Size(0, 52),
+                              side: BorderSide(
+                                color: _multipleImages
+                                    ? const Color(0xFFDCE4F1)
+                                    : Colors.transparent,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                            onPressed: _isProcessing
+                                ? null
+                                : () => setState(() => _multipleImages = false),
+                            icon: const Icon(Icons.image_outlined),
+                            label: const Text('Satu gambar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: _multipleImages
+                                  ? blue
+                                  : Colors.white,
+                              foregroundColor: _multipleImages
+                                  ? Colors.white
+                                  : ink,
+                              minimumSize: const Size(0, 52),
+                              side: BorderSide(
+                                color: _multipleImages
+                                    ? Colors.transparent
+                                    : const Color(0xFFDCE4F1),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                            onPressed: _isProcessing
+                                ? null
+                                : () => setState(() => _multipleImages = true),
+                            icon: const Icon(Icons.photo_library_outlined),
+                            label: const Text('Banyak gambar'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E9),
+                        border: Border.all(color: const Color(0xFFFFDF83)),
+                        borderRadius: BorderRadius.circular(17),
+                      ),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.lightbulb_rounded,
+                            color: Color(0xFFE7A514),
+                            size: 22,
+                          ),
+                          SizedBox(width: 11),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Tips hasil akurat',
+                                  style: TextStyle(
+                                    color: ink,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Gunakan satu tangan dengan seluruh jari terlihat dan latar belakang sederhana.',
+                                  style: TextStyle(
+                                    color: muted,
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_isProcessing) ...[
+                      const SizedBox(height: 18),
+                      const LinearProgressIndicator(),
+                      const SizedBox(height: 8),
+                      Text('Memproses gambar ${_results.length + 1}...'),
                     ],
-                  ),
+                  ],
                 ),
-                if (_isProcessing) ...[
-                  const SizedBox(height: 18),
-                  const LinearProgressIndicator(),
-                  const SizedBox(height: 8),
-                  Text('Memproses gambar ${_results.length + 1}...'),
-                ],
-              ],
+              ),
             ),
-          ),
-        ),
-        if (_results.isEmpty && !_isProcessing)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _EmptyUploadState(
-              isProcessing: _isProcessing,
-              multipleImages: _multipleImages,
-              onTap: _isProcessing
-                  ? null
-                  : () => _pickAndClassify(_multipleImages),
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-            sliver: SliverList.list(
-              children: [
-                _UploadSummary(results: _results),
-                const SizedBox(height: 14),
-                _UploadActionButton(
+            if (_results.isEmpty && !_isProcessing)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _EmptyUploadState(
                   isProcessing: _isProcessing,
                   multipleImages: _multipleImages,
                   onTap: _isProcessing
                       ? null
                       : () => _pickAndClassify(_multipleImages),
                 ),
-                const SizedBox(height: 14),
-                for (var index = 0; index < _results.length; index++) ...[
-                  _ResultCard(result: _results[index], index: index),
-                  if (index < _results.length - 1) const SizedBox(height: 12),
-                ],
-              ],
-            ),
-          ),
-      ],
-    ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                sliver: SliverList.list(
+                  children: [
+                    _UploadSummary(results: _results),
+                    const SizedBox(height: 14),
+                    _UploadActionButton(
+                      isProcessing: _isProcessing,
+                      multipleImages: _multipleImages,
+                      onTap: _isProcessing
+                          ? null
+                          : () => _pickAndClassify(_multipleImages),
+                    ),
+                    const SizedBox(height: 14),
+                    for (var index = 0; index < _results.length; index++) ...[
+                      _ResultCard(result: _results[index], index: index),
+                      if (index < _results.length - 1)
+                        const SizedBox(height: 12),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -402,9 +406,7 @@ class _UploadResult {
   final SignPrediction? prediction;
   final String? error;
   final String? historyError;
-  bool get accepted =>
-      prediction != null &&
-      prediction!.confidence >= _UploadScreenState._minimumConfidence;
+  bool get accepted => prediction?.accepted == true;
 }
 
 class _UploadSummary extends StatelessWidget {
@@ -462,7 +464,7 @@ class _ResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final prediction = result.prediction;
     final accepted = result.accepted;
-    final confidence = prediction?.confidence ?? 0;
+    final confidence = prediction?.confidence;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -557,7 +559,11 @@ class _ResultCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Keyakinan ${prediction.confidenceText}',
+                        confidence != null
+                            ? 'Keyakinan ${prediction.confidenceText}'
+                            : accepted
+                            ? 'Prediksi crop sepakat'
+                            : 'Prediksi crop berbeda',
                         style: TextStyle(
                           color: accepted
                               ? const Color(0xFF00A879)
@@ -566,18 +572,20 @@ class _ResultCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 7),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: LinearProgressIndicator(
-                          value: confidence.clamp(0.0, 1.0).toDouble(),
-                          minHeight: 6,
-                          backgroundColor: const Color(0xFFE9EEF6),
-                          color: accepted
-                              ? const Color(0xFF13B986)
-                              : const Color(0xFFE5AA33),
+                      if (confidence != null) ...[
+                        const SizedBox(height: 7),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: LinearProgressIndicator(
+                            value: confidence.clamp(0.0, 1.0).toDouble(),
+                            minHeight: 6,
+                            backgroundColor: const Color(0xFFE9EEF6),
+                            color: accepted
+                                ? const Color(0xFF13B986)
+                                : const Color(0xFFE5AA33),
+                          ),
                         ),
-                      ),
+                      ],
                       if (result.historyError != null) ...[
                         const SizedBox(height: 4),
                         Text(

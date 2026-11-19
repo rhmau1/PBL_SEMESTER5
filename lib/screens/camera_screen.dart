@@ -1,23 +1,18 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/history_item.dart';
 import '../models/jz_clip_result.dart';
 import '../models/sign_prediction.dart';
 import '../services/camera_preview_size.dart';
-import '../services/image_preprocessor.dart';
 import '../services/sign_classifier.dart';
-import '../services/jz_recognition_service.dart';
-import '../services/static_camera_pipeline.dart';
+import '../services/stable_sign.dart';
 import '../widgets/full_bleed_camera_preview.dart';
 
 class CameraScreen extends StatefulWidget {
@@ -28,8 +23,8 @@ class CameraScreen extends StatefulWidget {
     this.onResultSaved,
     this.onBusyChanged,
     this.topOverlayHeight = 0,
-    this.jzServiceFactory,
-    this.staticPipelineFactory,
+    this.selectedModel = SignModel.svmHog,
+    this.onModelChanged,
   });
 
   final bool cameraEnabled;
@@ -46,50 +41,27 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  static const _handDetectionInterval = Duration(milliseconds: 320);
-  static const _analysisInterval = Duration(milliseconds: 260);
-  static const _minimumConfidence = 0.60;
-  static const _stableFramesRequired = 2;
-  static const _handPresenceWindow = Duration(milliseconds: 800);
-  static const _handDetectionTimeout = Duration(seconds: 2);
-  static const _jzOperationTimeout = Duration(seconds: 10);
-  static const _jzCancellationTimeout = Duration(seconds: 2);
-  static final _supportedLabels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  static final _supportedLabels = 'ABCDEFGHIKLMNOPQRSTUVWXY'.split('');
 
   CameraController? _controller;
-  StaticCameraPipeline? _staticPipeline;
-  StreamSubscription<StaticHandObservation>? _handSubscription;
   List<CameraDescription> _cameras = const [];
   int _cameraIndex = 0;
   bool _isInitializing = true;
   bool _isSessionActive = false;
   bool _isTargetAnalysisActive = false;
   bool _isTargetAnalysisStarting = false;
-  bool _isProcessingFrame = false;
-  bool _isHandDetectionPending = false;
   bool _handDetected = false;
   String? _cameraError;
-  DateTime? _lastHandDetectionAt;
-  DateTime? _lastAnalysisAt;
-  DateTime? _lastHandSeenAt;
-  List<Offset>? _latestHandLandmarks;
-  String? _candidateLabel;
-  int _candidateCount = 0;
-  String? _lastCommittedLabel;
-  int _releaseFrameCount = 0;
   final List<String> _sessionLetters = [];
-  final List<double> _sessionConfidences = [];
+  final _stableSign = StableSign();
+  final _frameClock = Stopwatch()..start();
+  int _lastFrameAt = -250;
+  bool _processingFrame = false;
+  int _recognitionGeneration = 0;
   final List<String> _validationPredictions = [];
   String _selectedTarget = '';
   String? _latestTargetPrediction;
-  double? _latestTargetConfidence;
   String? _savedVideoPath;
-  int _analysisGeneration = 0;
-  DateTime? _lastCameraDiagnosticAt;
-  int? _lastFrameWidth;
-  int? _lastFrameHeight;
-  int? _lastFrameRotation;
-  bool? _lastFrameMirrored;
   bool _isStartingSession = false;
   bool _isEndingSession = false;
   late SignModel _selectedModel = widget.selectedModel;
@@ -145,6 +117,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
       _appIsActive = false;
+      if (_isSessionActive) unawaited(_endSession(showResult: false));
       unawaited(_disposeCamera());
     } else if (state == AppLifecycleState.resumed) {
       _appIsActive = true;
@@ -272,77 +245,6 @@ class _CameraScreenState extends State<CameraScreen>
         await _startTargetAnalysis(resetResults: false);
       }
     });
-  }
-
-  Future<bool> _initializeStaticPipeline() async {
-    if (_staticPipeline != null) return true;
-    final pipeline =
-        widget.staticPipelineFactory?.call() ?? StaticCameraPipeline();
-    _staticPipeline = pipeline;
-    try {
-      await pipeline.initialize();
-    } catch (_) {
-      if (identical(_staticPipeline, pipeline)) _staticPipeline = null;
-      pipeline.dispose();
-      rethrow;
-    }
-    if (!mounted || !_appIsActive || !identical(pipeline, _staticPipeline)) {
-      pipeline.dispose();
-      return false;
-    }
-    _handSubscription = pipeline.generationObservations.listen(
-      (observation) =>
-          _acceptHandLandmarks(observation.hands, observation.generation),
-      onError: (Object error) {
-        _isHandDetectionPending = false;
-        if (mounted) _showMessage('Hand detector gagal: $error');
-      },
-    );
-    return true;
-  }
-
-  void _acceptHandLandmarks(List<Hand> hands, int generation) {
-    // A detector result can arrive after a J/Z clip has invalidated the
-    // static-analysis generation. It must not release the hand guard or feed
-    // the CNN in the new generation.
-    if (generation != _analysisGeneration) return;
-    _isHandDetectionPending = false;
-    if (!mounted || !_isAnalysisActive) return;
-    if (_isJzBusy || _isJzTarget) return;
-    final now = DateTime.now();
-    final detectedHands = hands.where((hand) => hand.landmarks.isNotEmpty);
-    final detected = detectedHands.isNotEmpty;
-    if (_awaitingStaticRelease) {
-      if (!detected) {
-        setState(() {
-          _awaitingStaticRelease = false;
-          _jzFeedback = null;
-        });
-      }
-      _handDetected = false;
-      _lastHandSeenAt = null;
-      _latestHandLandmarks = null;
-      return;
-    }
-    if (detected) {
-      _lastHandSeenAt = now;
-      final landmarks = detectedHands.first.landmarks;
-      _latestHandLandmarks = List<Offset>.unmodifiable(
-        landmarks.map(
-          (landmark) =>
-              Offset(landmark.x.clamp(0.0, 1.0), landmark.y.clamp(0.0, 1.0)),
-        ),
-      );
-    }
-    final recentlyDetected =
-        _lastHandSeenAt != null &&
-        now.difference(_lastHandSeenAt!) <= _handPresenceWindow;
-    if (!recentlyDetected) {
-      _resetUnstablePrediction();
-    }
-    if (_handDetected != recentlyDetected) {
-      setState(() => _handDetected = recentlyDetected);
-    }
   }
 
   Future<void> _switchCamera() async {
@@ -817,277 +719,91 @@ class _CameraScreenState extends State<CameraScreen>
   }) {
     if (clearFreeResults) {
       _sessionLetters.clear();
-      _sessionConfidences.clear();
     }
     if (clearTargetResults) _validationPredictions.clear();
-    _candidateLabel = null;
-    _candidateCount = 0;
-    _lastCommittedLabel = null;
-    _releaseFrameCount = 0;
     _handDetected = false;
-    _lastHandDetectionAt = null;
-    _lastAnalysisAt = null;
-    _lastHandSeenAt = null;
-    _latestHandLandmarks = null;
-    _isHandDetectionPending = false;
     _latestTargetPrediction = null;
-    _latestTargetConfidence = null;
-    _jzFeedback = null;
-    _awaitingStaticRelease = false;
-    _analysisGeneration++;
+    _recognitionGeneration++;
+    _stableSign.reset();
+    _lastFrameAt = -250;
   }
 
   void _onCameraFrame(CameraImage cameraImage) {
-    if (!_isAnalysisActive) return;
     final controller = _controller;
-    if (controller == null) return;
-    final rotation = ImagePreprocessor.effectivePortraitRotation(
-      frameWidth: cameraImage.width,
-      frameHeight: cameraImage.height,
-      requestedRotationDegrees: _imageRotation(controller),
-    );
-    // Fresh raw frames reach the temporal model before the static throttles
-    // and cached-hand checks. Never mirror the input to match the preview.
-    if (_isJzCapturing) {
-      final timestamp = _jzClock.elapsedMilliseconds;
-      if (_lastJzTimestamp != null && timestamp <= _lastJzTimestamp!) return;
-      _lastJzTimestamp = timestamp;
-      unawaited(_sendJzFrame(cameraImage, timestamp, rotation, _jzGeneration));
-      return;
-    }
-    if (_isJzBusy || _isJzTarget || _isEndingSession) return;
-    final now = DateTime.now();
-    if (_isHandDetectionPending &&
-        _lastHandDetectionAt != null &&
-        now.difference(_lastHandDetectionAt!) >= _handDetectionTimeout) {
-      _isHandDetectionPending = false;
-    }
-    if (!_isHandDetectionPending &&
-        (_lastHandDetectionAt == null ||
-            now.difference(_lastHandDetectionAt!) >= _handDetectionInterval)) {
-      _lastHandDetectionAt = now;
-      _isHandDetectionPending = true;
-      try {
-        _staticPipeline?.detectHandsForGeneration(
-          cameraImage,
-          rotation,
-          _analysisGeneration,
-        );
-      } catch (error) {
-        _isHandDetectionPending = false;
-        if (mounted) {
-          _showMessage('Hand detector gagal memproses frame: $error');
-        }
-      }
-    }
-    if (_awaitingStaticRelease) return;
-    final handIsFresh =
-        _lastHandSeenAt != null &&
-        now.difference(_lastHandSeenAt!) <= _handPresenceWindow;
-    if (!handIsFresh) {
-      _latestHandLandmarks = null;
-      _resetUnstablePrediction();
-      return;
-    }
-    if (_isProcessingFrame) return;
-    if (_lastAnalysisAt != null &&
-        now.difference(_lastAnalysisAt!) < _analysisInterval) {
-      return;
-    }
-    _lastAnalysisAt = now;
-    _isProcessingFrame = true;
-    final analysisGeneration = _analysisGeneration;
-
-    // CameraPreview mirrors the front camera for the user, but the raw image
-    // stream and MediaPipe landmarks are not mirrored. Keep their geometry
-    // aligned. Any experimental model-input mirror is handled by SignClassifier
-    // and must not mirror the preview or MediaPipe coordinates a second time.
-    const mirrorForModel = false;
-    _lastFrameWidth = cameraImage.width;
-    _lastFrameHeight = cameraImage.height;
-    _lastFrameRotation = rotation;
-    _lastFrameMirrored = mirrorForModel;
-    final landmarks = _latestHandLandmarks;
-    if (landmarks == null || landmarks.length != 21) {
-      _isProcessingFrame = false;
-      return;
-    }
-    _staticPipeline!
-        .classify(
-          cameraImage,
-          rotationDegrees: rotation,
-          mirrorHorizontally: mirrorForModel,
-          normalizedLandmarks: landmarks,
-          model: _selectedModel,
-        )
-        .then((prediction) => _acceptPrediction(prediction, analysisGeneration))
-        .catchError((Object error) {
-          if (mounted) _showMessage('Frame gagal diproses: $error');
-        })
-        .whenComplete(() => _isProcessingFrame = false);
-  }
-
-  void _acceptPrediction(SignPrediction prediction, int analysisGeneration) {
+    final now = _frameClock.elapsedMilliseconds;
     if (!mounted ||
+        !_appIsActive ||
         !_isAnalysisActive ||
-        _isJzBusy ||
-        _isJzTarget ||
-        _awaitingStaticRelease ||
-        _isEndingSession ||
-        analysisGeneration != _analysisGeneration) {
+        _processingFrame ||
+        controller == null ||
+        now - _lastFrameAt < 250 ||
+        (cameraImage.format.group != ImageFormatGroup.yuv420 &&
+            cameraImage.format.group != ImageFormatGroup.nv21) ||
+        cameraImage.planes.isEmpty) {
       return;
     }
-    unawaited(_saveCameraDiagnostic(prediction));
-
-    if (_isTargetAnalysisActive) {
-      setState(() {
-        _latestTargetPrediction = prediction.label;
-        _latestTargetConfidence = prediction.confidence;
-      });
-    }
-
-    if (prediction.confidence < _minimumConfidence) {
-      _candidateLabel = null;
-      _candidateCount = 0;
-      _releaseFrameCount++;
-      return;
-    }
-    if (_lastCommittedLabel != null &&
-        prediction.label != _lastCommittedLabel) {
-      _releaseFrameCount++;
-    }
-    if (_candidateLabel == prediction.label) {
-      _candidateCount++;
-    } else {
-      _candidateLabel = prediction.label;
-      _candidateCount = 1;
-    }
-    final mayRepeatLastLetter =
-        prediction.label == _lastCommittedLabel && _releaseFrameCount >= 2;
-    if (_candidateCount >= _stableFramesRequired) {
-      if (prediction.label != _lastCommittedLabel || mayRepeatLastLetter) {
-        setState(() {
-          if (_isSessionActive) {
-            _sessionLetters.add(prediction.label);
-            _sessionConfidences.add(prediction.confidence);
-          } else if (_isTargetAnalysisActive) {
-            _validationPredictions.add(prediction.label);
-          }
-        });
-        _lastCommittedLabel = prediction.label;
-        _releaseFrameCount = 0;
-      }
-      _candidateCount = 0;
-    }
+    _lastFrameAt = now;
+    _processingFrame = true;
+    unawaited(_recognizeFrame(cameraImage, controller));
   }
 
-  void _resetUnstablePrediction() {
-    _candidateLabel = null;
-    _candidateCount = 0;
-    _releaseFrameCount++;
-  }
-
-  Future<void> _saveCameraDiagnostic(SignPrediction finalPrediction) async {
-    if (!kDebugMode) return;
-    final now = DateTime.now();
-    if (_lastCameraDiagnosticAt != null &&
-        now.difference(_lastCameraDiagnosticAt!) < const Duration(seconds: 1)) {
-      return;
-    }
-    _lastCameraDiagnosticAt = now;
+  Future<void> _recognizeFrame(
+    CameraImage image,
+    CameraController controller,
+  ) async {
+    final generation = _recognitionGeneration;
+    bool isCurrent() =>
+        mounted &&
+        _appIsActive &&
+        _isAnalysisActive &&
+        identical(controller, _controller) &&
+        generation == _recognitionGeneration;
     try {
-      final classifier = SignClassifier.instance;
-      final contextPng = classifier.lastContextInputPng;
-      if (contextPng == null) return;
-      final tightPng = classifier.lastTightInputPng;
-      final metadata = <String, Object?>{
-        'final_prediction': _predictionJson(finalPrediction),
-        'context_prediction': _predictionJson(classifier.lastContextPrediction),
-        'tight_prediction': _predictionJson(classifier.lastTightPrediction),
-        'landmark_prediction': _predictionJson(
-          classifier.lastLandmarkPrediction,
-        ),
-        'sensor_orientation': _controller?.description.sensorOrientation,
-        'device_orientation': _controller?.value.deviceOrientation.name,
-        'capture_orientation':
-            _controller?.value.lockedCaptureOrientation?.name,
-        'recording_orientation': _controller?.value.recordingOrientation?.name,
-        'preview_width': _controller?.value.previewSize?.width,
-        'preview_height': _controller?.value.previewSize?.height,
-        'native_preview': _controller == null
-            ? null
-            : cameraPreviewGeometry(_controller!).value?.toJson(),
-        'lens_direction': _controller?.description.lensDirection.name,
-        'frame_width': _lastFrameWidth,
-        'frame_height': _lastFrameHeight,
-        'rotation_degrees': _lastFrameRotation,
-        'mirrored': _lastFrameMirrored,
-        'mediapipe_landmarks': _latestHandLandmarks
-            ?.map((point) => <double>[point.dx, point.dy])
-            .toList(growable: false),
-      };
-      final documents = await getApplicationDocumentsDirectory();
-      final directory = Directory(
-        '${documents.path}${Platform.pathSeparator}camera_diagnostic',
+      final luma = image.planes.first;
+      final prediction = await SignClassifier.instance.classifyLuma(
+        bytes: luma.bytes,
+        width: image.width,
+        height: image.height,
+        stride: luma.bytesPerRow,
+        pixelStride: luma.bytesPerPixel ?? 1,
+        rotation: controller.description.sensorOrientation,
       );
-      await directory.create(recursive: true);
-      await File(
-        '${directory.path}${Platform.pathSeparator}model_input_context.png',
-      ).writeAsBytes(contextPng, flush: true);
-      final tightPath =
-          '${directory.path}${Platform.pathSeparator}model_input_tight.png';
-      if (tightPng != null) {
-        await File(tightPath).writeAsBytes(tightPng, flush: true);
-      } else {
-        final staleTightFile = File(tightPath);
-        if (await staleTightFile.exists()) await staleTightFile.delete();
-      }
-      await File('${directory.path}${Platform.pathSeparator}metadata.json')
-          .writeAsString(
-            const JsonEncoder.withIndent('  ').convert(metadata),
-            flush: true,
-          );
-    } catch (_) {
-      _lastCameraDiagnosticAt = null;
+      if (!isCurrent()) return;
+      final label = _stableSign.add(
+        prediction?.accepted == true ? prediction!.label : null,
+        hasForeground: prediction != null,
+      );
+      setState(() {
+        _handDetected = prediction != null;
+        if (_isTargetAnalysisActive) {
+          _latestTargetPrediction = _stableSign.current;
+          if (label != null) _validationPredictions.add(label);
+        } else if (label != null) {
+          _sessionLetters.add(label);
+        }
+      });
+    } catch (error) {
+      if (!isCurrent()) return;
+      debugPrint('SVM-HOG frame gagal diproses: $error');
+      setState(() {
+        _handDetected = false;
+        _latestTargetPrediction = null;
+        _stableSign.add(null, hasForeground: true);
+      });
+    } finally {
+      _processingFrame = false;
     }
   }
 
-  static Map<String, Object?>? _predictionJson(SignPrediction? prediction) {
-    if (prediction == null) return null;
-    return <String, Object?>{
-      'label': prediction.label,
-      'confidence': prediction.confidence,
-    };
-  }
-
-  Future<void> _endSession() async {
-    if (_isEndingSession || !_isSessionActive || _isJzStarting) return;
-    setState(() {
-      _isEndingSession = true;
-      _analysisGeneration++;
-    });
-    // Include the final complete motion decision before freezing the transcript.
-    await _finishJzGesture();
-    await _jzCancellation;
-    if (!mounted || !_isSessionActive) {
-      _isEndingSession = false;
-      if (mounted) {
-        setState(() {});
-        widget.onBusyChanged?.call(false);
-      }
-      return;
-    }
+  Future<void> _endSession({bool showResult = true}) async {
+    if (_isEndingSession || !_isSessionActive) return;
     final controller = _controller;
     final sequence = _sessionLetters.join();
-    final confidence = _sessionConfidences.isEmpty
-        ? 0.0
-        : _sessionConfidences.reduce((a, b) => a + b) /
-              _sessionConfidences.length;
     // Freeze accepted letters immediately. In-flight inference cannot append
     // a letter after Stop or create a second history record.
     setState(() {
       _isSessionActive = false;
-      _analysisGeneration++;
+      _recognitionGeneration++;
     });
     String? videoPath;
     try {
@@ -1111,9 +827,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
     if (mounted) {
       setState(() {
-        _isProcessingFrame = false;
         _handDetected = false;
-        _latestHandLandmarks = null;
         _savedVideoPath = videoPath;
       });
     }
@@ -1122,7 +836,7 @@ class _CameraScreenState extends State<CameraScreen>
         await widget.onResultSaved?.call(
           HistoryItem.fromDetection(
             gesture: sequence,
-            confidence: confidence,
+            confidence: null,
             source: 'video',
             modelId: _selectedModel.id,
             videoPath: videoPath,
@@ -1136,7 +850,7 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) setState(() {});
       if (mounted) widget.onBusyChanged?.call(false);
     }
-    if (mounted) await _showSessionResult();
+    if (mounted && _appIsActive && showResult) await _showSessionResult();
   }
 
   Future<void> _takePhoto() async {
@@ -1198,8 +912,6 @@ class _CameraScreenState extends State<CameraScreen>
     widget.onBusyChanged?.call(true);
     try {
       // classifyFile applies EXIF orientation and model-specific resizing.
-      // This plugin exposes MediaPipe only for live CameraImage frames;
-      // a still image is never given stale landmarks from another frame.
       final prediction =
           _photoPrediction ??
           await SignClassifier.instance.classifyFile(
@@ -1208,7 +920,7 @@ class _CameraScreenState extends State<CameraScreen>
           );
       if (!mounted || generation != _photoGeneration) return;
       setState(() => _photoPrediction = prediction);
-      if (prediction.confidence >= _minimumConfidence) {
+      if (prediction.accepted) {
         _isSavingPhotoHistory = true;
         await widget.onResultSaved?.call(
           HistoryItem.fromDetection(
@@ -1431,23 +1143,6 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  int _imageRotation(CameraController controller) {
-    const deviceDegrees = <DeviceOrientation, int>{
-      DeviceOrientation.portraitUp: 0,
-      DeviceOrientation.landscapeLeft: 90,
-      DeviceOrientation.portraitDown: 180,
-      DeviceOrientation.landscapeRight: 270,
-    };
-    final captureOrientation =
-        controller.value.lockedCaptureOrientation ??
-        controller.value.deviceOrientation;
-    final device = deviceDegrees[captureOrientation] ?? 0;
-    final sensor = controller.description.sensorOrientation;
-    return controller.description.lensDirection == CameraLensDirection.front
-        ? (sensor + device) % 360
-        : (sensor - device + 360) % 360;
-  }
-
   Future<void> _refreshPreviewSize(CameraController controller) {
     return synchronizeCameraPreviewSize(
       controller,
@@ -1460,62 +1155,11 @@ class _CameraScreenState extends State<CameraScreen>
     if (pendingDisposal != null) return pendingDisposal;
     final previousSave = _interruptedSessionSave;
     _cameraGeneration++;
-    final interruptedLetters = List<String>.of(_sessionLetters);
-    final interruptedConfidences = List<double>.of(_sessionConfidences);
-    final shouldSaveInterruptedSession =
-        _isSessionActive && interruptedLetters.isNotEmpty;
-    if (shouldSaveInterruptedSession) {
-      _pendingInterruptedHistory = HistoryItem.fromDetection(
-        gesture: interruptedLetters.join(),
-        confidence: interruptedConfidences.isEmpty
-            ? 0.0
-            : interruptedConfidences.reduce((a, b) => a + b) /
-                  interruptedConfidences.length,
-        source: 'video',
-      );
-    }
-    final motionCancellation = _cancelJz();
+    _resetRecognitionState();
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
-    _analysisGeneration++;
-    // Enqueue release immediately, before a rapid resume can enqueue an open.
-    late final Future<void> cameraRelease;
-    cameraRelease =
-        _queueCameraLifecycle(() async {
-          await motionCancellation;
-          await _releaseCamera();
-        }).whenComplete(() {
-          if (identical(_cameraDisposal, cameraRelease)) _cameraDisposal = null;
-        });
-    _cameraDisposal = cameraRelease;
-    late final Future<void> operation;
-    operation =
-        () async {
-          await cameraRelease;
-          // Releasing a resumed camera must not wait for the previous write.
-          // Keep writes serialized separately so a new session cannot retry
-          // the same pending history concurrently.
-          if (previousSave != null) {
-            try {
-              await previousSave;
-            } catch (_) {
-              // The original caller reports the failure. Start will retry it.
-            }
-          }
-          if (shouldSaveInterruptedSession) {
-            _pendingInterruptedHistory = _pendingInterruptedHistory?.copyWith(
-              videoPath: _savedVideoPath,
-            );
-            await _saveInterruptedSession();
-          }
-        }().whenComplete(() {
-          if (identical(_interruptedSessionSave, operation)) {
-            _interruptedSessionSave = null;
-          }
-        });
-    _interruptedSessionSave = operation;
     try {
-      await operation;
+      await _queueCameraLifecycle(_releaseCamera);
     } catch (error) {
       if (mounted) _showMessage('Penutupan sesi belum selesai: $error');
     }
@@ -1537,12 +1181,6 @@ class _CameraScreenState extends State<CameraScreen>
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
     _isTargetAnalysisStarting = false;
-    _isHandDetectionPending = false;
-    _analysisGeneration++;
-    await _handSubscription?.cancel();
-    _handSubscription = null;
-    _staticPipeline?.dispose();
-    _staticPipeline = null;
     if (controller == null) return;
     try {
       if (controller.value.isRecordingVideo) {
@@ -1625,11 +1263,6 @@ class _CameraScreenState extends State<CameraScreen>
               .where((label) => label == _selectedTarget)
               .length
         : 0;
-    final latestConfidence = isTargetMode
-        ? _latestTargetConfidence
-        : _sessionConfidences.isEmpty
-        ? null
-        : _sessionConfidences.last;
     final showLiveResults = _isSessionActive || isTargetMode;
     final showSetupControls = !_isSessionActive && !isTargetMode;
     return ColoredBox(
@@ -1672,66 +1305,80 @@ class _CameraScreenState extends State<CameraScreen>
             ),
             child: _ScrollableCameraControls(
               children: [
-                _CameraHeader(
-                  title: 'Kamera Latihan',
-                  subtitle: 'Deteksi isyarat secara langsung',
-                  trailing: _RoundCameraButton(
-                    tooltip: 'Ganti kamera',
-                    onPressed:
-                        _cameras.length > 1 &&
-                            !_isSessionActive &&
-                            !_isJzStarting &&
-                            !_isJzFinishing &&
-                            !_isJzCancelling &&
-                            !_isTargetAnalysisStarting &&
-                            !_isStartingSession &&
-                            !_isEndingSession
-                        ? _switchCamera
-                        : null,
-                    icon: Icons.cameraswitch_rounded,
+                if (showSetupControls) ...[
+                  Container(
+                    key: const ValueKey('camera-controls'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? const Color(0xE6101724)
+                          : Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF263246)
+                            : const Color(0xFFE2E9F3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(child: _buildModeSelector()),
+                        const SizedBox(width: 8),
+                        _StatusPill(
+                          active: _isAnalysisActive,
+                          handDetected: _handDetected,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE2E9F3)),
-                  ),
-                  child: Row(
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
-                      Expanded(child: _buildModeSelector()),
+                      Expanded(
+                        child: _ActiveModelCard(
+                          model: _selectedModel.name,
+                          onTap:
+                              _isTakingPhoto ||
+                                  _isClassifyingPhoto ||
+                                  _isSavingPhotoHistory
+                              ? null
+                              : _showModelPicker,
+                        ),
+                      ),
                       const SizedBox(width: 8),
-                      _StatusPill(
-                        active: _isAnalysisActive,
-                        handDetected: _handDetected,
+                      _RoundCameraButton(
+                        key: const ValueKey('camera-switch-button'),
+                        tooltip: 'Ganti kamera',
+                        onPressed:
+                            _cameras.length > 1 &&
+                                !_isTargetAnalysisStarting &&
+                                !_isStartingSession &&
+                                !_isEndingSession
+                            ? _switchCamera
+                            : null,
+                        icon: Icons.cameraswitch_rounded,
                       ),
                     ],
                   ),
+                ],
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: _DetectionFrame(),
+                  ),
                 ),
-                const Spacer(),
-                _LiveResultCard(
-                  active: _isAnalysisActive,
-                  handDetected: _handDetected,
-                  eventCount: eventCount,
-                  target: _selectedTarget,
-                  latestPrediction: _latestTargetPrediction,
-                  latestConfidence: _latestTargetConfidence,
-                  correctCount: validationCorrect,
-                  motionTarget: _isJzTarget,
-                  motionBusy: _isJzBusy,
-                  motionFeedback: _jzFeedback,
-                ),
-                const SizedBox(height: 10),
-                if (_isSessionActive) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: _buildJzControl(),
+                if (showLiveResults) ...[
+                  _LiveResultCard(
+                    key: const ValueKey('camera-live-results'),
+                    active: _isAnalysisActive || _isTargetAnalysisStarting,
+                    handDetected: _handDetected,
+                    eventCount: eventCount,
+                    target: _selectedTarget,
+                    latestPrediction: _latestTargetPrediction,
+                    correctCount: validationCorrect,
                   ),
                   const SizedBox(height: 10),
                 ],
@@ -1817,8 +1464,7 @@ class _CameraScreenState extends State<CameraScreen>
     final prediction = _photoPrediction;
     final busy = _isTakingPhoto || _isClassifyingPhoto || _isSavingPhotoHistory;
     final colors = Theme.of(context).colorScheme;
-    final reliable =
-        prediction != null && prediction.confidence >= _minimumConfidence;
+    final reliable = prediction?.accepted == true;
     return ColoredBox(
       key: const PageStorageKey('camera_photo'),
       color: colors.surface,
@@ -1935,7 +1581,9 @@ class _CameraScreenState extends State<CameraScreen>
                             ),
                           ),
                           Text(
-                            'Keyakinan model ${(prediction.confidence * 100).toStringAsFixed(1)}%',
+                            reliable
+                                ? 'Prediksi crop sepakat'
+                                : 'Prediksi crop berbeda',
                             style: TextStyle(
                               color: colors.onSurfaceVariant,
                               fontSize: 13,
@@ -2523,9 +2171,7 @@ class _ModelOption extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      model == SignModel.modelC
-                          ? 'Model grayscale camera_robust_v1'
-                          : 'Model RGB MobileNetV2',
+                      '24 huruf statis • Deteksi di perangkat',
                       style: TextStyle(
                         color: colors.onSurfaceVariant,
                         fontSize: 12,
@@ -2619,11 +2265,7 @@ class _LiveResultCard extends StatelessWidget {
     required this.eventCount,
     required this.target,
     required this.latestPrediction,
-    required this.latestConfidence,
     required this.correctCount,
-    this.motionTarget = false,
-    this.motionBusy = false,
-    this.motionFeedback,
   });
 
   final bool active;
@@ -2631,22 +2273,13 @@ class _LiveResultCard extends StatelessWidget {
   final int eventCount;
   final String target;
   final String? latestPrediction;
-  final double? latestConfidence;
   final int correctCount;
-  final bool motionTarget;
-  final bool motionBusy;
-  final String? motionFeedback;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final isReliable = _predictionIsReliable && handDetected;
     final output = target.isNotEmpty
-        ? isReliable
-              ? latestPrediction!
-              : '—'
-        : sessionText.isNotEmpty
-        ? sessionText
+        ? (handDetected ? latestPrediction : null) ?? '—'
         : active && handDetected
         ? 'Menganalisis...'
         : '—';
@@ -2668,54 +2301,66 @@ class _LiveResultCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              children: [
+                Icon(
+                  active ? Icons.sensors_rounded : Icons.sensors_off_rounded,
+                  color: active ? colors.primary : colors.onSurfaceVariant,
+                  size: 17,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    target.isNotEmpty
+                        ? 'LIVE STREAM UJI HURUF $target'
+                        : 'LIVE STREAM DETEKSI ISYARAT',
+                    style: TextStyle(
+                      color: colors.primary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.6,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  active ? 'LIVE' : 'SIAP',
+                  style: TextStyle(
+                    color: active ? colors.primary : colors.onSurfaceVariant,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
             Container(
-              width: 48,
-              height: 48,
-              alignment: Alignment.center,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFEAF0FF),
-                borderRadius: BorderRadius.circular(14),
+                color: colors.surfaceContainerHighest.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(13),
+                border: Border.all(color: colors.outlineVariant),
               ),
               child: Text(
-                target.isNotEmpty
-                    ? handDetected || motionTarget
-                          ? _predictionIsReliable
-                                ? latestPrediction ?? '?'
-                                : '?'
-                          : '?'
-                    : active
-                    ? '$eventCount'
-                    : '-',
-                style: const TextStyle(
-                  color: Color(0xFF2864F0),
-                  fontSize: 24,
+                output,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: output == '—'
+                      ? colors.onSurfaceVariant
+                      : colors.onSurface,
+                  fontSize: target.isNotEmpty ? 22 : 16,
                   fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
                 ),
               ),
             ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _title,
-                    style: const TextStyle(
-                      color: Color(0xFF172642),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _description,
-                    style: const TextStyle(
-                      color: Color(0xFF7585A2),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 5),
+            Text(
+              _description,
+              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11),
             ),
           ],
         ),
@@ -2767,28 +2412,19 @@ class _LiveResultCard extends StatelessWidget {
         return 'Deteksi dimulai otomatis saat kamera siap; video tidak direkam.';
       }
       if (!handDetected) {
-        return 'Tangan boleh di mana saja; pastikan telapak dan jari tidak terpotong.';
+        return 'Gunakan latar polos dan pastikan tangan terlihat utuh.';
       }
-      if (latestPrediction == null || latestConfidence == null) {
+      if (latestPrediction == null) {
         return 'Tahan pose sebentar sampai prediksi muncul.';
       }
-      final confidence = (latestConfidence! * 100).toStringAsFixed(1);
-      if (!_predictionIsReliable) {
-        return 'Keyakinan $confidence% masih di bawah 60% dan belum dihitung.';
-      }
-      return '$correctCount/$eventCount percobaan stabil benar | keyakinan $confidence%';
+      return '$correctCount/$eventCount percobaan stabil benar';
     }
     if (!active) {
       return 'Hasil tampil di akhir. Untuk J/Z, gunakan Mulai J/Z saat sesi berjalan.';
     }
     if (!handDetected) {
-      return 'Boleh di bagian mana saja; pastikan telapak dan jari tidak terpotong.';
+      return 'Gunakan latar polos dan pastikan tangan terlihat utuh.';
     }
     return '$eventCount huruf tersimpan. Hasil disembunyikan sampai sesi diakhiri.';
   }
-
-  bool get _predictionIsReliable =>
-      latestPrediction != null &&
-      latestConfidence != null &&
-      latestConfidence! >= 0.60;
 }

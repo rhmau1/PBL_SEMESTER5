@@ -1,420 +1,59 @@
-import 'dart:convert';
-import 'dart:math' as math;
-
-import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:image/image.dart' as img;
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'dart:typed_data';
 
 import '../models/sign_prediction.dart';
-import 'image_preprocessor.dart';
-import 'photo_recovery_preprocessor.dart';
-import 'still_image_hand_detector.dart';
-import 'static_image_prediction_policy.dart';
+import 'svm_hog_classifier.dart';
+
+enum SignModel {
+  svmHog(id: 'svm_hog', name: 'SVM + HOG');
+
+  const SignModel({required this.id, required this.name});
+
+  final String id;
+  final String name;
+}
 
 class SignClassifier {
   SignClassifier._();
 
   static final SignClassifier instance = SignClassifier._();
+  final _backend = SvmHogClassifier.instance;
 
-  static const _labelsPath = 'assets/models/labels.json';
-  // Experimental: reduces wrong accepts in the real-photo audit but rejects
-  // many valid standardized inputs. Keep the established orientation default.
-  static const _useOrientationEnsemble = bool.fromEnvironment(
-    'STATIC_ORIENTATION_ENSEMBLE',
-    defaultValue: false,
+  Future<void> initialize({SignModel model = SignModel.svmHog}) =>
+      _backend.initialize();
+
+  Future<SignPrediction> classifyFile(
+    String path, {
+    SignModel model = SignModel.svmHog,
+  }) async => _adapt(await _backend.classifyFile(path));
+
+  Future<SignPrediction> classifyUploadFile(
+    String path, {
+    SignModel model = SignModel.svmHog,
+  }) => classifyFile(path, model: model);
+
+  Future<SignPrediction?> classifyLuma({
+    required Uint8List bytes,
+    required int width,
+    required int height,
+    required int stride,
+    required int pixelStride,
+    required int rotation,
+  }) async {
+    final result = await _backend.classifyLuma(
+      bytes: bytes,
+      width: width,
+      height: height,
+      stride: stride,
+      pixelStride: pixelStride,
+      rotation: rotation,
+    );
+    return result == null ? null : _adapt(result);
+  }
+
+  SignPrediction _adapt(SvmHogPrediction result) => SignPrediction(
+    label: result.label,
+    confidence: null,
+    scores: result.scores,
+    agreement: result.accepted,
   );
-  static const _landmarkReferencesPath =
-      'assets/models/landmark_references.json';
-
-  final Map<SignModel, _LoadedSignModel> _loadedModels = {};
-  final Map<SignModel, Future<void>> _initializations = {};
-  List<String> _labels = const [];
-  Map<String, List<Offset>> _landmarkReferences = const {};
-  img.Image? _lastContextInput;
-  img.Image? _lastTightInput;
-  SignPrediction? _lastContextPrediction;
-  SignPrediction? _lastTightPrediction;
-  SignPrediction? _lastMirroredContextPrediction;
-  SignPrediction? _lastMirroredTightPrediction;
-  SignPrediction? _lastLandmarkPrediction;
-  List<Offset> _lastInputLandmarks = const [];
-  bool _lastUsedPaddingRetry = false;
-  SignPrediction? _lastFullImagePrediction;
-  PhotoRecoveryInputs? _lastPhotoRecoveryInputs;
-  SignPrediction? _lastPhotoRecoveryContextPrediction;
-  SignPrediction? _lastPhotoRecoveryTightPrediction;
-  SignPrediction? _lastPhotoRecoveryFullPrediction;
-  bool _lastPhotoRecoveryApplied = false;
-
-  bool get isReady =>
-      _interpreter != null && _isolateInterpreter != null && _labels.isNotEmpty;
-  List<String> get labels => List.unmodifiable(_labels);
-  List<int>? get lastContextInputPng =>
-      _lastContextInput == null ? null : img.encodePng(_lastContextInput!);
-  List<int>? get lastTightInputPng =>
-      _lastTightInput == null ? null : img.encodePng(_lastTightInput!);
-  SignPrediction? get lastContextPrediction => _lastContextPrediction;
-  SignPrediction? get lastTightPrediction => _lastTightPrediction;
-  SignPrediction? get lastMirroredContextPrediction =>
-      _lastMirroredContextPrediction;
-  SignPrediction? get lastMirroredTightPrediction =>
-      _lastMirroredTightPrediction;
-  SignPrediction? get lastLandmarkPrediction => _lastLandmarkPrediction;
-  List<Offset> get lastInputLandmarks => _lastInputLandmarks;
-  bool get usesOrientationEnsemble => _useOrientationEnsemble;
-  bool get lastUsedPaddingRetry => _lastUsedPaddingRetry;
-  SignPrediction? get lastFullImagePrediction => _lastFullImagePrediction;
-  List<int>? get lastPhotoRecoveryContextInputPng =>
-      _lastPhotoRecoveryInputs == null
-      ? null
-      : img.encodePng(_lastPhotoRecoveryInputs!.context);
-  List<int>? get lastPhotoRecoveryTightInputPng =>
-      _lastPhotoRecoveryInputs == null
-      ? null
-      : img.encodePng(_lastPhotoRecoveryInputs!.tight);
-  List<int>? get lastPhotoRecoveryFullInputPng =>
-      _lastPhotoRecoveryInputs == null
-      ? null
-      : img.encodePng(_lastPhotoRecoveryInputs!.full);
-  SignPrediction? get lastPhotoRecoveryContextPrediction =>
-      _lastPhotoRecoveryContextPrediction;
-  SignPrediction? get lastPhotoRecoveryTightPrediction =>
-      _lastPhotoRecoveryTightPrediction;
-  SignPrediction? get lastPhotoRecoveryFullPrediction =>
-      _lastPhotoRecoveryFullPrediction;
-  Rect? get lastPhotoRecoveryBounds =>
-      _lastPhotoRecoveryInputs?.foregroundBounds;
-  bool get lastPhotoRecoveryApplied => _lastPhotoRecoveryApplied;
-
-  Future<void> initialize() => _initialization ??= _load();
-
-  Future<void> _load() async {
-    final labelsJson = jsonDecode(await rootBundle.loadString(_labelsPath));
-    _labels = List<String>.from(labelsJson['labels'] as List<dynamic>);
-    final referencesJson = jsonDecode(
-      await rootBundle.loadString(_landmarkReferencesPath),
-    ) as Map<String, dynamic>;
-    final references = referencesJson['labels'] as Map<String, dynamic>;
-    _landmarkReferences = Map<String, List<Offset>>.unmodifiable(
-      references.map(
-        (label, value) => MapEntry(
-          label,
-          (value as List<dynamic>)
-              .map((point) {
-                final coordinates = point as List<dynamic>;
-                return Offset(
-                  (coordinates[0] as num).toDouble(),
-                  (coordinates[1] as num).toDouble(),
-                );
-              })
-              .toList(growable: false),
-        ),
-      ),
-    );
-
-    final options = InterpreterOptions()..threads = 4;
-    final interpreter = await Interpreter.fromAsset(
-      model.assetPath,
-      options: options,
-    );
-    final inputShape = interpreter.getInputTensor(0).shape;
-    final outputShape = interpreter.getOutputTensor(0).shape;
-    if (!_sameShape(inputShape, <int>[
-          1,
-          model.inputSize,
-          model.inputSize,
-          model.inputChannels,
-        ]) ||
-        !_sameShape(outputShape, <int>[1, _labels.length])) {
-      interpreter.close();
-      throw StateError(
-        'Kontrak ${model.name} tidak sesuai: input $inputShape, '
-        'output $outputShape.',
-      );
-    }
-    try {
-      final isolateInterpreter = await IsolateInterpreter.create(
-        address: interpreter.address,
-        debugName: 'LatihIsyarat-${model.id}',
-      );
-      _loadedModels[model] = _LoadedSignModel(
-        interpreter: interpreter,
-        isolateInterpreter: isolateInterpreter,
-      );
-    } catch (_) {
-      interpreter.close();
-      rethrow;
-    }
-  }
-
-  Future<SignPrediction> classifyFile(String path) async {
-    _clearImageDiagnostics();
-    const detector = StillImageHandDetector();
-    final image = await detector.loadImage(path);
-    final detection = await detector.detectWithDetails(image);
-    _lastUsedPaddingRetry = detection.usedPaddingRetry;
-    if (!isReady) await initialize();
-    var prediction = await _classifyHandCrops(
-      ImagePreprocessor.imageToGrayHandCrops(
-        image,
-        normalizedLandmarks: detection.landmarks,
-      ),
-      verifyBothCrops: true,
-    );
-    if (detection.usedPaddingRetry) {
-      final full = await _classifyModelImage(
-        ImagePreprocessor.toModelImage(image),
-      );
-      _lastFullImagePrediction = full;
-      prediction = StaticImagePredictionPolicy.confirmRecoveredHand(
-        _labels,
-        prediction,
-        full,
-      );
-    }
-    if (prediction.confidence >= 0.60) return prediction;
-    final recovery = await compute(
-      PhotoRecoveryPreprocessor.prepare,
-      PhotoRecoveryRequest(image, detection.landmarks),
-    );
-    if (recovery == null) return prediction;
-    _lastPhotoRecoveryInputs = recovery;
-    final full =
-        _lastFullImagePrediction ?? await _classifyModelImage(recovery.full);
-    final context = await _classifyModelImage(recovery.context);
-    final tight = await _classifyModelImage(recovery.tight);
-    _lastPhotoRecoveryFullPrediction = full;
-    _lastPhotoRecoveryContextPrediction = context;
-    _lastPhotoRecoveryTightPrediction = tight;
-    final recovered = StaticImagePredictionPolicy.recoverUncertainPhoto(
-      _labels,
-      primary: prediction,
-      full: full,
-      context: context,
-      tight: tight,
-    );
-    _lastPhotoRecoveryApplied = !identical(recovered, prediction);
-    return recovered;
-  }
-
-  Future<SignPrediction> classifyUploadFile(String path) => classifyFile(path);
-
-  Future<SignPrediction> classifyCameraFrame(
-    CameraImage cameraImage, {
-    required int rotationDegrees,
-    required bool mirrorHorizontally,
-    required List<Offset> normalizedLandmarks,
-    SignModel model = SignModel.modelC,
-  }) async {
-    if (!isReadyFor(model)) await initialize(model: model);
-    final crops = model == SignModel.modelC
-        ? ImagePreprocessor.cameraImageToGrayCrops(
-            cameraImage,
-            rotationDegrees: rotationDegrees,
-            mirrorHorizontally: mirrorHorizontally,
-            normalizedLandmarks: normalizedLandmarks,
-          )
-        : ImagePreprocessor.cameraImageToRgbCrops(
-            cameraImage,
-            rotationDegrees: rotationDegrees,
-            mirrorHorizontally: mirrorHorizontally,
-            normalizedLandmarks: normalizedLandmarks,
-          );
-    return _classifyHandCrops(crops, model);
-  }
-
-  Future<SignPrediction> _classifyHandCrops(
-    CameraFrameCrops crops, {
-    bool verifyBothCrops = false,
-  }) async {
-    _clearPhotoRecoveryDiagnostics();
-    final contextInput = ImagePreprocessor.toModelImage(crops.context);
-    final contextPrediction = await _classifyModelImage(contextInput);
-    final landmarkPrediction = _classifyLandmarks(crops.orientedLandmarks);
-    _lastContextInput = contextInput;
-    _lastTightInput = null;
-    _lastContextPrediction = contextPrediction;
-    _lastTightPrediction = null;
-    _lastMirroredContextPrediction = null;
-    _lastMirroredTightPrediction = null;
-    _lastLandmarkPrediction = landmarkPrediction;
-    _lastInputLandmarks = List<Offset>.unmodifiable(crops.orientedLandmarks);
-    var context = contextPrediction;
-    if (_useOrientationEnsemble) {
-      final mirrored = await _classifyModelImage(
-        img.flipHorizontal(img.Image.from(contextInput)),
-      );
-      _lastMirroredContextPrediction = mirrored;
-      context = StaticImagePredictionPolicy.averageOrientations(
-        _labels,
-        contextPrediction,
-        mirrored,
-      );
-    }
-    if (!verifyBothCrops && context.confidence >= 0.90) return context;
-
-    final tightPrediction = await _classifyModelImage(
-      _lastTightInput = ImagePreprocessor.toModelImage(crops.tight),
-    );
-    _lastTightPrediction = tightPrediction;
-    var tight = tightPrediction;
-    if (_useOrientationEnsemble) {
-      final mirrored = await _classifyModelImage(
-        img.flipHorizontal(img.Image.from(_lastTightInput!)),
-      );
-      _lastMirroredTightPrediction = mirrored;
-      tight = StaticImagePredictionPolicy.averageOrientations(
-        _labels,
-        tightPrediction,
-        mirrored,
-      );
-    }
-    return StaticImagePredictionPolicy.combineCrops(_labels, context, tight);
-  }
-
-  Future<SignPrediction> classifyImage(
-    img.Image image, {
-    double cropFraction = 1,
-    Rect? normalizedCrop,
-    SignModel model = SignModel.modelC,
-  }) {
-    if (!isReadyFor(model)) {
-      throw StateError('Model belum siap.');
-    }
-
-    final modelImage = model == SignModel.modelC
-        ? ImagePreprocessor.toModelImage(
-            image,
-            cropFraction: cropFraction,
-            normalizedCrop: normalizedCrop,
-          )
-        : ImagePreprocessor.toModelRgbImage(
-            image,
-            cropFraction: cropFraction,
-            normalizedCrop: normalizedCrop,
-          );
-    return _classifyModelImage(modelImage, model);
-  }
-
-  img.Image _toModelImage(img.Image image, SignModel model) =>
-      model == SignModel.modelC
-      ? ImagePreprocessor.toModelImage(image)
-      : ImagePreprocessor.toModelRgbImage(image);
-
-  Future<SignPrediction> _classifyModelImage(
-    img.Image modelImage,
-    SignModel model,
-  ) async {
-    final loadedModel = _loadedModels[model];
-    if (loadedModel == null) {
-      throw StateError('Model belum siap.');
-    }
-
-    final input = model == SignModel.modelC
-        ? ImagePreprocessor.modelImageToInput(modelImage)
-        : ImagePreprocessor.rgbImageToInput(modelImage);
-    final output = <List<double>>[List<double>.filled(_labels.length, 0)];
-    await loadedModel.isolateInterpreter.run(input, output);
-    return _predictionFromScores(List<double>.from(output.first));
-  }
-
-  SignPrediction _predictionFromScores(List<double> scores) {
-    return StaticImagePredictionPolicy.fromScores(_labels, scores);
-  }
-
-  SignPrediction? _classifyLandmarks(List<Offset> landmarks) {
-    if (landmarks.length != 21 || _landmarkReferences.isEmpty) return null;
-    final feature = _normalizeLandmarks(landmarks);
-    final distances = <double>[];
-    for (final label in _labels) {
-      final reference = _landmarkReferences[label];
-      if (reference == null || reference.length != 21) return null;
-      final normal = _normalizeLandmarks(reference);
-      final mirrored = _normalizeLandmarks(
-        reference
-            .map((point) => Offset(1 - point.dx, point.dy))
-            .toList(growable: false),
-      );
-      distances.add(
-        math.min(
-          _meanSquaredDistance(feature, normal),
-          _meanSquaredDistance(feature, mirrored),
-        ),
-      );
-    }
-
-    final minimumDistance = distances.reduce(math.min);
-    final weights = distances
-        .map((distance) => math.exp(-(distance - minimumDistance) / 0.06))
-        .toList(growable: false);
-    final total = weights.fold<double>(0, (sum, value) => sum + value);
-    if (!total.isFinite || total <= 0) return null;
-    return _predictionFromScores(
-      weights.map((weight) => weight / total).toList(growable: false),
-    );
-  }
-
-  static List<double> _normalizeLandmarks(List<Offset> landmarks) {
-    final wrist = landmarks[0];
-    final scale = (landmarks[9] - wrist).distance;
-    if (scale <= 0.000001) return List<double>.filled(42, 0);
-    return landmarks
-        .expand(
-          (point) => <double>[
-            (point.dx - wrist.dx) / scale,
-            (point.dy - wrist.dy) / scale,
-          ],
-        )
-        .toList(growable: false);
-  }
-
-  static double _meanSquaredDistance(List<double> a, List<double> b) {
-    var sum = 0.0;
-    for (var index = 0; index < a.length; index++) {
-      final difference = a[index] - b[index];
-      sum += difference * difference;
-    }
-    return sum / a.length;
-  }
-
-  Future<void> close() async {
-    await _isolateInterpreter?.close();
-    _isolateInterpreter = null;
-    _interpreter?.close();
-    _interpreter = null;
-    _initialization = null;
-    _clearImageDiagnostics();
-  }
-
-  void _clearImageDiagnostics() {
-    _clearPhotoRecoveryDiagnostics();
-    _lastUsedPaddingRetry = false;
-    _lastFullImagePrediction = null;
-    _lastContextInput = null;
-    _lastTightInput = null;
-    _lastContextPrediction = null;
-    _lastTightPrediction = null;
-    _lastMirroredContextPrediction = null;
-    _lastMirroredTightPrediction = null;
-    _lastLandmarkPrediction = null;
-    _lastInputLandmarks = const [];
-  }
-
-  void _clearPhotoRecoveryDiagnostics() {
-    _lastPhotoRecoveryInputs = null;
-    _lastPhotoRecoveryContextPrediction = null;
-    _lastPhotoRecoveryTightPrediction = null;
-    _lastPhotoRecoveryFullPrediction = null;
-    _lastPhotoRecoveryApplied = false;
-  }
-
-  static bool _sameShape(List<int> actual, List<int> expected) {
-    if (actual.length != expected.length) return false;
-    for (var index = 0; index < actual.length; index++) {
-      if (actual[index] != expected[index]) return false;
-    }
-    return true;
-  }
 }

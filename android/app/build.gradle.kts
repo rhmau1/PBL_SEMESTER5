@@ -16,7 +16,9 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.sign_language"
+        val qaBuild = providers.gradleProperty("svmHogQa").orNull == "true"
+        applicationId = if (qaBuild) "com.example.sign_language.svmqa" else "com.example.sign_language"
+        manifestPlaceholders["appLabel"] = if (qaBuild) "LatihIsyarat QA" else "LatihIsyarat"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
@@ -37,10 +39,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-
-    aaptOptions {
-        noCompress += "tflite"
-    }
 }
 
 kotlin {
@@ -58,11 +56,4 @@ dependencies {
     implementation("androidx.camera:camera-core:1.6.1")
     implementation("com.google.mediapipe:tasks-vision:1.0.0")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
-    // MediaPipe Tasks Vision for StillImageHandLandmarker
-    implementation("com.google.mediapipe:tasks-vision:1.0.0")
-
-    androidTestImplementation("androidx.test:runner:1.3.0")
-    androidTestImplementation("androidx.test:rules:1.2.0")
-    androidTestImplementation("androidx.test.ext:junit:1.1.2")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.3.0")
 }

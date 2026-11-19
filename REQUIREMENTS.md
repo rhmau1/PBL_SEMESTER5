@@ -19,7 +19,8 @@ folder project. Tidak perlu menyimpan SDK, cache dependency, atau APK di Git.
 
 Gunakan versi Flutter yang sama untuk hasil build yang konsisten. Workflow CI
 di `.github/workflows/ci.yml` memakai Flutter 3.47.5. Project ditujukan untuk
-Android; kamera dan MediaPipe perlu diuji di HP nyata.
+Android. Branch RAMA-SVM-HOG menyediakan backend inferensi Dart dan aset model
+untuk disambungkan oleh tim frontend.
 
 ## Instalasi
 
@@ -57,7 +58,7 @@ Jika memakai VS Code, instal extension Flutter dan Dart.
 Untuk komputer anggota tim yang belum memiliki repository:
 
 ```bash
-git clone https://github.com/rhmau1/PBL_SEMESTER5.git \
+git clone --branch RAMA-SVM-HOG https://github.com/rhmau1/PBL_SEMESTER5.git \
   ~/Documents/rhma2026/PBL_SEMESTER5
 cd ~/Documents/rhma2026/PBL_SEMESTER5
 flutter pub get
@@ -76,8 +77,6 @@ Versi berikut berasal dari `pubspec.lock` hasil merge:
 | camera_android_camerax | 0.7.4+7 | Backend Android; dikunci untuk bridge preview |
 | camera_platform_interface | 2.14.0 | Antarmuka backend kamera |
 | AndroidX camera-core | 1.6.1 | Transformasi native preview; dikelola Gradle |
-| hand_landmarker | 3.1.0 | MediaPipe untuk mendeteksi tangan pada frame |
-| tflite_flutter | 0.12.1 | Menjalankan model lokal |
 | image | 4.9.2 | EXIF, crop, resize, grayscale |
 | image_picker | 1.2.4 | Memilih gambar dari galeri |
 | path_provider | 2.1.6 | Direktori penyimpanan internal |
@@ -86,7 +85,7 @@ Versi berikut berasal dari `pubspec.lock` hasil merge:
 | flutter_riverpod | 2.6.1 | State aplikasi dan riwayat |
 
 Package tidak perlu diinstal satu per satu. `flutter pub get` memasang
-dependency termasuk model Hand Landmarker yang dibundel oleh plugin.
+dependency Flutter. Aset inferensi SVM-HOG sudah tersedia di repo.
 
 ## USB dan menjalankan di HP
 
@@ -160,8 +159,8 @@ debug key; siapkan signing produksi sebelum distribusi resmi.
   model HP dan tahap terjadinya masalah untuk validasi.
 
 Jangan mengirim `build`, `.dart_tool`, `android/local.properties`, SDK, atau
-JDK ke Git. Model TFLite, labels, metadata, referensi landmark, foto kamus,
-source native bridge, dan `pubspec.lock` harus tetap tersedia untuk tim.
+JDK ke Git. Pertahankan aset SVM-HOG, label, metadata, foto kamus,
+source native bridge, dan `pubspec.lock` agar tim dapat menjalankan aplikasi.
 
 ## Lampiran opsional: Windows
 

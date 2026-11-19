@@ -26,8 +26,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
     _OnboardingSlide(
       eyebrow: 'PILIH MODEL AI',
-      title: 'Dua model, satu cara belajar',
-      description: 'Pilih Model C atau Model E sebelum mendeteksi. Model yang dipilih akan digunakan untuk Video, Foto, dan Upload.',
+      title: 'Kenali metode SVM dan HOG',
+      description: 'HOG membaca pola tepi tangan dan SVM mengenali 24 huruf statis langsung di perangkat.',
       visual: _SlideVisual.models,
     ),
     _OnboardingSlide(
@@ -389,8 +389,8 @@ class _ModelsVisual extends StatelessWidget {
           children: const [
             Expanded(
               child: _ModelTile(
-                name: 'Model C',
-                detail: 'Grayscale',
+                name: 'HOG',
+                detail: 'Ekstraksi fitur',
                 icon: Icons.memory_rounded,
                 selected: true,
               ),
@@ -398,8 +398,8 @@ class _ModelsVisual extends StatelessWidget {
             SizedBox(width: 12),
             Expanded(
               child: _ModelTile(
-                name: 'Model E',
-                detail: 'MobileNet V2',
+                name: 'SVM',
+                detail: 'Klasifikasi',
                 icon: Icons.auto_awesome_rounded,
               ),
             ),

@@ -46,11 +46,11 @@ void main() {
         expect(find.text('Mode Latihan Bebas'), findsOneWidget);
         expect(find.text('Mode Uji per Huruf'), findsOneWidget);
         expect(
-          find.textContaining('26 Huruf ASL: Pose dan Gerakan'),
+          find.textContaining('24 Abjad Didukung (Tanpa J & Z)'),
           findsOneWidget,
         );
         expect(
-          find.textContaining('Model gerakan terpisah mengenali J dan Z'),
+          find.textContaining('J dan Z memerlukan pengenalan gerakan tangan'),
           findsOneWidget,
         );
 
@@ -72,9 +72,7 @@ void main() {
           find.textContaining('Riwayat Deteksi Otomatis'),
         );
         expect(
-          find.textContaining(
-            'gerakan J/Z yang diterima disimpan ke Riwayat Deteksi',
-          ),
+          find.textContaining('otomatis tersimpan ke halaman Riwayat Deteksi'),
           findsOneWidget,
         );
 
