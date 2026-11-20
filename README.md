@@ -36,5 +36,5 @@ Gunakan lingkungan Flutter dan Android pada REQUIREMENTS.md.
 flutter pub get
 flutter analyze
 flutter test
-flutter run
+flutter run --dart-define=GEMINI_API_KEY=API_KEY_GEMINI_KAMU
 ```
