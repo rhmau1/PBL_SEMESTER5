@@ -1,20 +1,22 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
+import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../widgets/camera_overlay_widgets.dart';
 import '../models/history_item.dart';
 import '../models/sign_prediction.dart';
 import '../services/camera_preview_size.dart';
-import '../services/image_preprocessor.dart';
 import '../services/sign_classifier.dart';
+import '../services/stable_sign.dart';
 import '../widgets/full_bleed_camera_preview.dart';
+import '../services/llm_autocorrect_service.dart';
+
+const _modelSelectionBlue = Color(0xFF2864F0);
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({
@@ -24,6 +26,8 @@ class CameraScreen extends StatefulWidget {
     this.onResultSaved,
     this.onBusyChanged,
     this.topOverlayHeight = 0,
+    this.selectedModel = SignModel.svmHog,
+    this.onModelChanged,
   });
 
   final bool cameraEnabled;
@@ -31,6 +35,8 @@ class CameraScreen extends StatefulWidget {
   final Future<void> Function(HistoryItem)? onResultSaved;
   final ValueChanged<bool>? onBusyChanged;
   final double topOverlayHeight;
+  final SignModel selectedModel;
+  final ValueChanged<SignModel>? onModelChanged;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -38,50 +44,30 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  static const _handDetectionInterval = Duration(milliseconds: 320);
-  static const _analysisInterval = Duration(milliseconds: 260);
-  static const _minimumConfidence = 0.60;
-  static const _stableFramesRequired = 2;
-  static const _handPresenceWindow = Duration(milliseconds: 800);
-  static const _handDetectionTimeout = Duration(seconds: 2);
   static final _supportedLabels = 'ABCDEFGHIKLMNOPQRSTUVWXY'.split('');
 
   CameraController? _controller;
-  HandLandmarkerPlugin? _handLandmarker;
-  StreamSubscription<List<Hand>>? _handSubscription;
   List<CameraDescription> _cameras = const [];
   int _cameraIndex = 0;
   bool _isInitializing = true;
   bool _isSessionActive = false;
   bool _isTargetAnalysisActive = false;
   bool _isTargetAnalysisStarting = false;
-  bool _isProcessingFrame = false;
-  bool _isHandDetectionPending = false;
   bool _handDetected = false;
   String? _cameraError;
-  DateTime? _lastHandDetectionAt;
-  DateTime? _lastAnalysisAt;
-  DateTime? _lastHandSeenAt;
-  List<Offset>? _latestHandLandmarks;
-  String? _candidateLabel;
-  int _candidateCount = 0;
-  String? _lastCommittedLabel;
-  int _releaseFrameCount = 0;
   final List<String> _sessionLetters = [];
-  final List<double> _sessionConfidences = [];
+  final _stableSign = StableSign();
+  final _frameClock = Stopwatch()..start();
+  int _lastFrameAt = -250;
+  bool _processingFrame = false;
+  int _recognitionGeneration = 0;
   final List<String> _validationPredictions = [];
   String _selectedTarget = '';
   String? _latestTargetPrediction;
-  double? _latestTargetConfidence;
   String? _savedVideoPath;
-  int _analysisGeneration = 0;
-  DateTime? _lastCameraDiagnosticAt;
-  int? _lastFrameWidth;
-  int? _lastFrameHeight;
-  int? _lastFrameRotation;
-  bool? _lastFrameMirrored;
   bool _isStartingSession = false;
   bool _isEndingSession = false;
+  late SignModel _selectedModel = widget.selectedModel;
   bool _isTakingPhoto = false;
   bool _isClassifyingPhoto = false;
   bool _isSavingPhotoHistory = false;
@@ -94,13 +80,92 @@ class _CameraScreenState extends State<CameraScreen>
   // Native camera resources belong to the app, even when navigation destroys
   // this State. A new screen must wait for the old controller's disposal.
   static Future<void>? _cameraLifecycleQueue;
+  HandLandmarkerPlugin? _handLandmarker;
+  StreamSubscription<List<Hand>>? _landmarkSubscription;
+  List<Hand> _latestHands = const [];
+  int _lastHandDetectedAtMs = 0;
+  int _lastMpFeedAtMs = 0;
 
   bool get _isAnalysisActive => _isSessionActive || _isTargetAnalysisActive;
+
+  Future<void> _showModelPicker() async {
+    if (_isTakingPhoto || _isClassifyingPhoto || _isSavingPhotoHistory) return;
+    var selectedModel = _selectedModel;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final colors = Theme.of(context).colorScheme;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pilih Model AI',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Pilih model yang digunakan untuk deteksi isyarat.',
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 18),
+                for (final model in SignModel.values) ...[
+                  ModelOption(
+                    key: ValueKey('camera-model-option-${model.id}'),
+                    model: model,
+                    selected: selectedModel == model,
+                    onTap: () => setSheetState(() => selectedModel = model),
+                  ),
+                  if (model != SignModel.values.last)
+                    const SizedBox(height: 10),
+                ],
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const ValueKey('camera-model-confirm'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _modelSelectionBlue,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        if (_selectedModel != selectedModel) {
+                          _selectedModel = selectedModel;
+                          _photoPrediction = null;
+                          _photoHistorySaved = false;
+                          _resetRecognitionState(clearTargetResults: true);
+                        }
+                      });
+                      widget.onModelChanged?.call(selectedModel);
+                      Navigator.of(sheetContext).pop();
+                    },
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Gunakan Model Terpilih'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.cameraEnabled && !widget.photoMode) {
+      _initHandLandmarker();
+    }
     if (widget.cameraEnabled) {
       unawaited(_initializeCameras());
     } else {
@@ -114,6 +179,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
       _appIsActive = false;
+      if (_isSessionActive) unawaited(_endSession(showResult: false));
       unawaited(_disposeCamera());
     } else if (state == AppLifecycleState.resumed) {
       _appIsActive = true;
@@ -124,6 +190,9 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void didUpdateWidget(covariant CameraScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedModel != widget.selectedModel) {
+      _selectedModel = widget.selectedModel;
+    }
     if (oldWidget.cameraEnabled == widget.cameraEnabled &&
         oldWidget.photoMode == widget.photoMode) {
       return;
@@ -168,10 +237,14 @@ class _CameraScreenState extends State<CameraScreen>
         _setCameraError(_friendlyCameraError(error));
       }
     } catch (error) {
-      if (_isCurrentCameraRequest(generation)) _setCameraError('$error');
+      if (_isCurrentCameraRequest(generation)) {
+        _setCameraError('$error');
+      }
     } finally {
       if (_isCurrentCameraRequest(generation)) {
-        setState(() => _isInitializing = false);
+        setState(() {
+          _isInitializing = false;
+        });
       }
     }
   }
@@ -229,57 +302,12 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
       setState(() => _controller = controller);
+      unawaited(SignClassifier.instance.initialize(model: _selectedModel));
       await _refreshPreviewSize(controller);
       if (!widget.photoMode && _selectedTarget.isNotEmpty) {
         await _startTargetAnalysis(resetResults: false);
       }
     });
-  }
-
-  void _initializeHandLandmarker() {
-    if (_handLandmarker != null) return;
-    _handSubscription?.cancel();
-    _handLandmarker?.dispose();
-    final landmarker = HandLandmarkerPlugin.create(
-      numHands: 1,
-      minHandDetectionConfidence: 0.35,
-      delegate: HandLandmarkerDelegate.cpu,
-    );
-    _handLandmarker = landmarker;
-    _handSubscription = landmarker.landmarkStream.listen(
-      _acceptHandLandmarks,
-      onError: (Object error) {
-        _isHandDetectionPending = false;
-        if (mounted) _showMessage('Hand detector gagal: $error');
-      },
-    );
-  }
-
-  void _acceptHandLandmarks(List<Hand> hands) {
-    _isHandDetectionPending = false;
-    if (!mounted || !_isAnalysisActive) return;
-    final now = DateTime.now();
-    final detectedHands = hands.where((hand) => hand.landmarks.isNotEmpty);
-    final detected = detectedHands.isNotEmpty;
-    if (detected) {
-      _lastHandSeenAt = now;
-      final landmarks = detectedHands.first.landmarks;
-      _latestHandLandmarks = List<Offset>.unmodifiable(
-        landmarks.map(
-          (landmark) =>
-              Offset(landmark.x.clamp(0.0, 1.0), landmark.y.clamp(0.0, 1.0)),
-        ),
-      );
-    }
-    final recentlyDetected =
-        _lastHandSeenAt != null &&
-        now.difference(_lastHandSeenAt!) <= _handPresenceWindow;
-    if (!recentlyDetected) {
-      _resetUnstablePrediction();
-    }
-    if (_handDetected != recentlyDetected) {
-      setState(() => _handDetected = recentlyDetected);
-    }
   }
 
   Future<void> _switchCamera() async {
@@ -299,11 +327,44 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       await _openCamera(_cameras[_cameraIndex], generation);
     } catch (error) {
-      if (_isCurrentCameraRequest(generation)) _setCameraError('$error');
+      if (_isCurrentCameraRequest(generation)) {
+        _setCameraError(
+          error is CameraException ? _friendlyCameraError(error) : '$error',
+        );
+      }
     } finally {
       if (_isCurrentCameraRequest(generation)) {
         setState(() => _isInitializing = false);
       }
+    }
+  }
+
+  void _initHandLandmarker() {
+    try {
+      _handLandmarker = HandLandmarkerPlugin.create(
+        numHands: 1,
+        minHandDetectionConfidence: 0.35,
+        delegate: HandLandmarkerDelegate.cpu,
+      );
+    } catch (_) {
+      try {
+        _handLandmarker = HandLandmarkerPlugin.create(
+          numHands: 1,
+          minHandDetectionConfidence: 0.5,
+          delegate: HandLandmarkerDelegate.cpu,
+        );
+      } catch (e) {
+        debugPrint('MediaPipe HandLandmarker gagal dimuat: $e');
+      }
+    }
+    final plugin = _handLandmarker;
+    if (plugin != null) {
+      _landmarkSubscription = plugin.landmarkStream.listen((hands) {
+        _latestHands = hands;
+        if (hands.isNotEmpty) {
+          _lastHandDetectedAtMs = _frameClock.elapsedMilliseconds;
+        }
+      });
     }
   }
 
@@ -321,12 +382,11 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isStartingSession = true);
     widget.onBusyChanged?.call(true);
     try {
-      await SignClassifier.instance.initialize();
+      await SignClassifier.instance.initialize(model: _selectedModel);
       if (!_isCurrentCameraRequest(cameraGeneration) ||
           !identical(controller, _controller)) {
         return;
       }
-      _initializeHandLandmarker();
       setState(() {
         _resetRecognitionState(clearFreeResults: true);
         _savedVideoPath = null;
@@ -338,13 +398,18 @@ class _CameraScreenState extends State<CameraScreen>
             !identical(controller, _controller)) {
           throw StateError('Kamera tidak lagi aktif.');
         }
-        await controller.startVideoRecording(onAvailable: _onCameraFrame);
+        // CameraX rebinds its use cases when recording starts; reapply the
+        // portrait target rotation immediately before that transition.
+        await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
+        if (!controller.value.isStreamingImages) {
+          await controller.startImageStream(_onCameraFrame);
+        }
         await _refreshPreviewSize(controller);
       });
     } catch (error) {
       if (mounted) {
         setState(() => _isSessionActive = false);
-        _showMessage('Tidak dapat memulai kamera: $error');
+        _handleCameraOperationError(error, 'Tidak dapat memulai kamera');
       }
     } finally {
       _isStartingSession = false;
@@ -384,6 +449,10 @@ class _CameraScreenState extends State<CameraScreen>
       _selectedTarget = target;
       _resetRecognitionState(clearTargetResults: true);
     });
+    if (_controller == null && _cameraError != null) {
+      await _initializeCameras();
+      return;
+    }
     if (!streamAlreadyActive) {
       await _startTargetAnalysis(resetResults: false);
     }
@@ -411,14 +480,13 @@ class _CameraScreenState extends State<CameraScreen>
       _isTargetAnalysisStarting = true;
     }
     try {
-      await SignClassifier.instance.initialize();
+      await SignClassifier.instance.initialize(model: _selectedModel);
       if (!mounted ||
           !_appIsActive ||
           !identical(controller, _controller) ||
           _selectedTarget.isEmpty) {
         return;
       }
-      _initializeHandLandmarker();
       if (resetResults && mounted) {
         setState(() => _resetRecognitionState(clearTargetResults: true));
       }
@@ -433,7 +501,10 @@ class _CameraScreenState extends State<CameraScreen>
     } catch (error) {
       if (mounted) {
         setState(() => _isTargetAnalysisActive = false);
-        _showMessage('Deteksi otomatis tidak dapat dimulai: $error');
+        _handleCameraOperationError(
+          error,
+          'Deteksi otomatis tidak dapat dimulai',
+        );
       }
     } finally {
       if (mounted) {
@@ -455,263 +526,156 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  void _resetTargetResults() {
-    if (_selectedTarget.isEmpty) return;
-    setState(() => _resetRecognitionState(clearTargetResults: true));
-  }
-
   void _resetRecognitionState({
     bool clearFreeResults = false,
     bool clearTargetResults = false,
   }) {
     if (clearFreeResults) {
       _sessionLetters.clear();
-      _sessionConfidences.clear();
     }
     if (clearTargetResults) _validationPredictions.clear();
-    _candidateLabel = null;
-    _candidateCount = 0;
-    _lastCommittedLabel = null;
-    _releaseFrameCount = 0;
     _handDetected = false;
-    _lastHandDetectionAt = null;
-    _lastAnalysisAt = null;
-    _lastHandSeenAt = null;
-    _latestHandLandmarks = null;
-    _isHandDetectionPending = false;
     _latestTargetPrediction = null;
-    _latestTargetConfidence = null;
-    _analysisGeneration++;
+    _recognitionGeneration++;
+    _stableSign.reset();
+    _lastFrameAt = -250;
   }
 
   void _onCameraFrame(CameraImage cameraImage) {
-    if (!_isAnalysisActive) return;
     final controller = _controller;
-    if (controller == null) return;
-    final rotation = ImagePreprocessor.effectivePortraitRotation(
-      frameWidth: cameraImage.width,
-      frameHeight: cameraImage.height,
-      requestedRotationDegrees: _imageRotation(controller),
-    );
-    final now = DateTime.now();
-    if (_isHandDetectionPending &&
-        _lastHandDetectionAt != null &&
-        now.difference(_lastHandDetectionAt!) >= _handDetectionTimeout) {
-      _isHandDetectionPending = false;
-    }
-    if (!_isHandDetectionPending &&
-        (_lastHandDetectionAt == null ||
-            now.difference(_lastHandDetectionAt!) >= _handDetectionInterval)) {
-      _lastHandDetectionAt = now;
-      _isHandDetectionPending = true;
-      try {
-        _handLandmarker?.processFrame(cameraImage, rotation);
-      } catch (error) {
-        _isHandDetectionPending = false;
-        if (mounted) {
-          _showMessage('Hand detector gagal memproses frame: $error');
-        }
-      }
-    }
-    final handIsFresh =
-        _lastHandSeenAt != null &&
-        now.difference(_lastHandSeenAt!) <= _handPresenceWindow;
-    if (!handIsFresh) {
-      _latestHandLandmarks = null;
-      _resetUnstablePrediction();
-      return;
-    }
-    if (_isProcessingFrame) return;
-    if (_lastAnalysisAt != null &&
-        now.difference(_lastAnalysisAt!) < _analysisInterval) {
-      return;
-    }
-    _lastAnalysisAt = now;
-    _isProcessingFrame = true;
-    final analysisGeneration = _analysisGeneration;
-
-    // CameraPreview mirrors the front camera for the user, but the raw image
-    // stream and MediaPipe landmarks are not mirrored. The ASL model was also
-    // trained in that canonical orientation: mirroring a clear C makes it
-    // predict P. Keep the model input unmirrored for both camera lenses.
-    const mirrorForModel = false;
-    _lastFrameWidth = cameraImage.width;
-    _lastFrameHeight = cameraImage.height;
-    _lastFrameRotation = rotation;
-    _lastFrameMirrored = mirrorForModel;
-    final landmarks = _latestHandLandmarks;
-    if (landmarks == null || landmarks.length != 21) {
-      _isProcessingFrame = false;
-      return;
-    }
-    SignClassifier.instance
-        .classifyCameraFrame(
-          cameraImage,
-          rotationDegrees: rotation,
-          mirrorHorizontally: mirrorForModel,
-          normalizedLandmarks: landmarks,
-        )
-        .then((prediction) => _acceptPrediction(prediction, analysisGeneration))
-        .catchError((Object error) {
-          if (mounted) _showMessage('Frame gagal diproses: $error');
-        })
-        .whenComplete(() => _isProcessingFrame = false);
-  }
-
-  void _acceptPrediction(SignPrediction prediction, int analysisGeneration) {
+    final now = _frameClock.elapsedMilliseconds;
     if (!mounted ||
+        !_appIsActive ||
         !_isAnalysisActive ||
-        analysisGeneration != _analysisGeneration) {
+        controller == null ||
+        (cameraImage.format.group != ImageFormatGroup.yuv420 &&
+            cameraImage.format.group != ImageFormatGroup.nv21) ||
+        cameraImage.planes.isEmpty) {
       return;
     }
-    unawaited(_saveCameraDiagnostic(prediction));
-
-    if (_isTargetAnalysisActive) {
-      setState(() {
-        _latestTargetPrediction = prediction.label;
-        _latestTargetConfidence = prediction.confidence;
-      });
+    if (now - _lastMpFeedAtMs >= 80) {
+      _lastMpFeedAtMs = now;
+      try {
+        _handLandmarker?.processFrame(
+          cameraImage,
+          controller.description.sensorOrientation,
+        );
+      } catch (_) {}
     }
-
-    if (prediction.confidence < _minimumConfidence) {
-      _candidateLabel = null;
-      _candidateCount = 0;
-      _releaseFrameCount++;
+    if (_processingFrame || now - _lastFrameAt < 250) {
       return;
     }
-    if (_lastCommittedLabel != null &&
-        prediction.label != _lastCommittedLabel) {
-      _releaseFrameCount++;
-    }
-    if (_candidateLabel == prediction.label) {
-      _candidateCount++;
-    } else {
-      _candidateLabel = prediction.label;
-      _candidateCount = 1;
-    }
-    final mayRepeatLastLetter =
-        prediction.label == _lastCommittedLabel && _releaseFrameCount >= 2;
-    if (_candidateCount >= _stableFramesRequired) {
-      if (prediction.label != _lastCommittedLabel || mayRepeatLastLetter) {
-        setState(() {
-          if (_isSessionActive) {
-            _sessionLetters.add(prediction.label);
-            _sessionConfidences.add(prediction.confidence);
-          } else if (_isTargetAnalysisActive) {
-            _validationPredictions.add(prediction.label);
-          }
-        });
-        _lastCommittedLabel = prediction.label;
-        _releaseFrameCount = 0;
-      }
-      _candidateCount = 0;
-    }
+    _lastFrameAt = now;
+    _processingFrame = true;
+    unawaited(_recognizeFrame(cameraImage, controller));
   }
 
-  void _resetUnstablePrediction() {
-    _candidateLabel = null;
-    _candidateCount = 0;
-    _releaseFrameCount++;
-  }
-
-  Future<void> _saveCameraDiagnostic(SignPrediction finalPrediction) async {
-    if (!kDebugMode) return;
-    final now = DateTime.now();
-    if (_lastCameraDiagnosticAt != null &&
-        now.difference(_lastCameraDiagnosticAt!) < const Duration(seconds: 1)) {
-      return;
-    }
-    _lastCameraDiagnosticAt = now;
+  Future<void> _recognizeFrame(
+    CameraImage image,
+    CameraController controller,
+  ) async {
+    final generation = _recognitionGeneration;
+    bool isCurrent() =>
+        mounted &&
+        _appIsActive &&
+        _isAnalysisActive &&
+        identical(controller, _controller) &&
+        generation == _recognitionGeneration;
     try {
-      final classifier = SignClassifier.instance;
-      final contextPng = classifier.lastContextInputPng;
-      if (contextPng == null) return;
-      final tightPng = classifier.lastTightInputPng;
-      final metadata = <String, Object?>{
-        'final_prediction': _predictionJson(finalPrediction),
-        'context_prediction': _predictionJson(classifier.lastContextPrediction),
-        'tight_prediction': _predictionJson(classifier.lastTightPrediction),
-        'landmark_prediction': _predictionJson(
-          classifier.lastLandmarkPrediction,
-        ),
-        'sensor_orientation': _controller?.description.sensorOrientation,
-        'device_orientation': _controller?.value.deviceOrientation.name,
-        'capture_orientation':
-            _controller?.value.lockedCaptureOrientation?.name,
-        'recording_orientation': _controller?.value.recordingOrientation?.name,
-        'preview_width': _controller?.value.previewSize?.width,
-        'preview_height': _controller?.value.previewSize?.height,
-        'native_preview': _controller == null
-            ? null
-            : cameraPreviewGeometry(_controller!).value?.toJson(),
-        'lens_direction': _controller?.description.lensDirection.name,
-        'frame_width': _lastFrameWidth,
-        'frame_height': _lastFrameHeight,
-        'rotation_degrees': _lastFrameRotation,
-        'mirrored': _lastFrameMirrored,
-        'mediapipe_landmarks': _latestHandLandmarks
-            ?.map((point) => <double>[point.dx, point.dy])
-            .toList(growable: false),
-      };
-      final documents = await getApplicationDocumentsDirectory();
-      final directory = Directory(
-        '${documents.path}${Platform.pathSeparator}camera_diagnostic',
-      );
-      await directory.create(recursive: true);
-      await File(
-        '${directory.path}${Platform.pathSeparator}model_input_context.png',
-      ).writeAsBytes(contextPng, flush: true);
-      final tightPath =
-          '${directory.path}${Platform.pathSeparator}model_input_tight.png';
-      if (tightPng != null) {
-        await File(tightPath).writeAsBytes(tightPng, flush: true);
+      final luma = image.planes.first;
+      final hasFreshMpHand =
+          _latestHands.isNotEmpty &&
+          (_frameClock.elapsedMilliseconds - _lastHandDetectedAtMs) <= 600;
+      SignPrediction? prediction;
+      if (hasFreshMpHand) {
+        final sensorRot = controller.description.sensorOrientation;
+        final landmarks = _latestHands.first.landmarks
+            .map((lm) {
+              return switch (sensorRot) {
+                90 => (x: 1.0 - lm.y, y: lm.x),
+                180 => (x: 1.0 - lm.x, y: 1.0 - lm.y),
+                270 => (x: lm.y, y: 1.0 - lm.x),
+                _ => (x: lm.x, y: lm.y),
+              };
+            })
+            .toList(growable: false);
+        prediction = await SignClassifier.instance.classifyLumaWithLandmarks(
+          bytes: luma.bytes,
+          width: image.width,
+          height: image.height,
+          stride: luma.bytesPerRow,
+          pixelStride: luma.bytesPerPixel ?? 1,
+          rotation: controller.description.sensorOrientation,
+          landmarks: landmarks,
+        );
+        debugPrint(
+          'MP_ORIENT lens=${controller.description.lensDirection.name} '
+          'sensor=${controller.description.sensorOrientation} '
+          'w=(${landmarks[0].x.toStringAsFixed(2)},${landmarks[0].y.toStringAsFixed(2)}) '
+          'm9=(${landmarks[9].x.toStringAsFixed(2)},${landmarks[9].y.toStringAsFixed(2)}) '
+          'pred=${prediction?.label} acc=${prediction?.agreement}',
+        );
       } else {
-        final staleTightFile = File(tightPath);
-        if (await staleTightFile.exists()) await staleTightFile.delete();
+        prediction = await SignClassifier.instance.classifyLuma(
+          bytes: luma.bytes,
+          width: image.width,
+          height: image.height,
+          stride: luma.bytesPerRow,
+          pixelStride: luma.bytesPerPixel ?? 1,
+          rotation: controller.description.sensorOrientation,
+        );
       }
-      await File('${directory.path}${Platform.pathSeparator}metadata.json')
-          .writeAsString(
-            const JsonEncoder.withIndent('  ').convert(metadata),
-            flush: true,
-          );
-    } catch (_) {
-      _lastCameraDiagnosticAt = null;
+      if (!isCurrent()) return;
+      final label = _stableSign.add(
+        prediction?.accepted == true ? prediction!.label : null,
+        hasForeground: prediction != null,
+      );
+      setState(() {
+        _handDetected = prediction != null;
+        if (_isTargetAnalysisActive) {
+          _latestTargetPrediction = _stableSign.current;
+          if (label != null) _validationPredictions.add(label);
+        } else if (label != null) {
+          _sessionLetters.add(label);
+        }
+      });
+    } catch (error) {
+      if (!isCurrent()) return;
+      debugPrint('SVM-HOG frame gagal diproses: $error');
+      setState(() {
+        _handDetected = false;
+        _latestTargetPrediction = null;
+        _stableSign.add(null, hasForeground: true);
+      });
+    } finally {
+      _processingFrame = false;
     }
   }
 
-  static Map<String, Object?>? _predictionJson(SignPrediction? prediction) {
-    if (prediction == null) return null;
-    return <String, Object?>{
-      'label': prediction.label,
-      'confidence': prediction.confidence,
-    };
-  }
-
-  Future<void> _endSession() async {
+  Future<void> _endSession({bool showResult = true}) async {
     if (_isEndingSession || !_isSessionActive) return;
     final controller = _controller;
     final sequence = _sessionLetters.join();
-    final confidence = _sessionConfidences.isEmpty
-        ? 0.0
-        : _sessionConfidences.reduce((a, b) => a + b) /
-              _sessionConfidences.length;
     // Freeze accepted letters immediately. In-flight inference cannot append
     // a letter after Stop or create a second history record.
     setState(() {
       _isEndingSession = true;
       _isSessionActive = false;
-      _analysisGeneration++;
+      _recognitionGeneration++;
     });
     String? videoPath;
     try {
       await _queueCameraLifecycle(() async {
-        if (!identical(controller, _controller)) return;
-        if (controller?.value.isRecordingVideo ?? false) {
-          final recording = await controller!.stopVideoRecording();
+        if (controller == null || !identical(controller, _controller)) return;
+        if (controller.value.isRecordingVideo) {
+          final recording = await controller.stopVideoRecording();
+          // Stopping recording rebinds the preview use case. Restore its
+          // portrait target rotation before refreshing the preview transform.
+          await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
           await _refreshPreviewSize(controller);
           videoPath = await _saveRecording(recording);
-        } else if (controller?.value.isStreamingImages ?? false) {
-          await controller!.stopImageStream();
+        } else if (controller.value.isStreamingImages) {
+          await controller.stopImageStream();
           await _refreshPreviewSize(controller);
         }
       });
@@ -720,9 +684,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
     if (mounted) {
       setState(() {
-        _isProcessingFrame = false;
         _handDetected = false;
-        _latestHandLandmarks = null;
         _savedVideoPath = videoPath;
       });
     }
@@ -731,8 +693,9 @@ class _CameraScreenState extends State<CameraScreen>
         await widget.onResultSaved?.call(
           HistoryItem.fromDetection(
             gesture: sequence,
-            confidence: confidence,
+            confidence: null,
             source: 'video',
+            modelId: _selectedModel.id,
             videoPath: videoPath,
           ),
         );
@@ -744,7 +707,7 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) setState(() {});
       if (mounted) widget.onBusyChanged?.call(false);
     }
-    if (mounted) await _showSessionResult();
+    if (mounted && _appIsActive && showResult) await _showSessionResult();
   }
 
   Future<void> _takePhoto() async {
@@ -785,7 +748,7 @@ class _CameraScreenState extends State<CameraScreen>
         _photoHistorySaved = false;
       });
     } catch (error) {
-      _showMessage('Foto gagal diambil: $error');
+      _handleCameraOperationError(error, 'Foto gagal diambil');
     } finally {
       _isTakingPhoto = false;
       if (mounted) setState(() {});
@@ -805,20 +768,23 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _isClassifyingPhoto = true);
     widget.onBusyChanged?.call(true);
     try {
-      // classifyFile decodes EXIF orientation before grayscale/resizing.
-      // This plugin exposes MediaPipe only for live CameraImage frames;
-      // a still image is never given stale landmarks from another frame.
+      // classifyFile applies EXIF orientation and model-specific resizing.
       final prediction =
-          _photoPrediction ?? await SignClassifier.instance.classifyFile(path);
+          _photoPrediction ??
+          await SignClassifier.instance.classifyFile(
+            path,
+            model: _selectedModel,
+          );
       if (!mounted || generation != _photoGeneration) return;
       setState(() => _photoPrediction = prediction);
-      if (prediction.confidence >= _minimumConfidence) {
+      if (prediction.accepted) {
         _isSavingPhotoHistory = true;
         await widget.onResultSaved?.call(
           HistoryItem.fromDetection(
             gesture: prediction.label,
             confidence: prediction.confidence,
             source: 'photo',
+            modelId: _selectedModel.id,
             imagePath: path,
           ),
         );
@@ -827,7 +793,7 @@ class _CameraScreenState extends State<CameraScreen>
         }
       }
     } catch (error) {
-      _showMessage('Foto gagal diproses atau disimpan: $error');
+      _handleCameraOperationError(error, 'Foto gagal diproses atau disimpan');
     } finally {
       _isClassifyingPhoto = false;
       _isSavingPhotoHistory = false;
@@ -869,158 +835,256 @@ class _CameraScreenState extends State<CameraScreen>
         : _validationPredictions;
     final sequence = displayedPredictions.join();
     final validationTotal = _validationPredictions.length;
-    final validationCorrect = _validationPredictions
-        .where((label) => label == target)
-        .length;
+    final validationCorrect = target.isEmpty
+        ? 0
+        : _validationPredictions.where((label) => label == target).length;
     final validationAccuracy = validationTotal == 0
         ? 0.0
         : validationCorrect / validationTotal * 100;
+
+    // Panggil LLM hanya di mode bebas (target kosong) dan minimal 2 huruf
+    final Future<AutocorrectResult>? autocorrectFuture =
+        (target.isEmpty && sequence.length >= 2)
+        ? LlmAutocorrectService.instance.correctWord(sequence)
+        : null;
+
+    var activeSequence = sequence;
+
     return showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       backgroundColor: const Color(0xFFF4F7FC),
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(22, 8, 22, 30),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.fromLTRB(18, 22, 18, 20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(26),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x140E2343),
-                        blurRadius: 22,
-                        offset: Offset(0, 9),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 58,
-                        height: 58,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFE3F8EF),
-                          shape: BoxShape.circle,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(22, 8, 22, 30),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(18, 22, 18, 20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(26),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x140E2343),
+                          blurRadius: 22,
+                          offset: Offset(0, 9),
                         ),
-                        child: const Icon(
-                          Icons.task_alt_rounded,
-                          size: 32,
-                          color: Color(0xFF10AD7E),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        target.isEmpty
-                            ? 'Hasil sesi'
-                            : 'Hasil uji target $target',
-                        style: const TextStyle(
-                          color: Color(0xFF172642),
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 18,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEAF0FF),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          sequence.isEmpty
-                              ? 'Belum ada huruf yang stabil.'
-                              : sequence,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: sequence.isEmpty
-                                ? const Color(0xFF7585A2)
-                                : const Color(0xFF2864F0),
-                            fontSize: sequence.isEmpty ? 15 : 34,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: sequence.isEmpty ? 0 : 6,
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 58,
+                          height: 58,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE3F8EF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.task_alt_rounded,
+                            size: 32,
+                            color: Color(0xFF10AD7E),
                           ),
                         ),
-                      ),
-                      if (displayedPredictions.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         Text(
                           target.isEmpty
-                              ? '${displayedPredictions.length} huruf dikenali tanpa spasi'
-                              : '${displayedPredictions.length} percobaan stabil direkam',
+                              ? 'Hasil sesi'
+                              : 'Hasil uji target $target',
                           style: const TextStyle(
-                            color: Color(0xFF7585A2),
-                            fontSize: 13,
+                            color: Color(0xFF172642),
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          alignment: WrapAlignment.center,
-                          children: displayedPredictions
-                              .map(
-                                (letter) => Chip(
-                                  backgroundColor: const Color(0xFFEAF0FF),
-                                  label: Text(
-                                    letter,
-                                    style: const TextStyle(
-                                      color: Color(0xFF2864F0),
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ],
-                      if (target.isNotEmpty) ...[
-                        const SizedBox(height: 16),
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 18,
+                          ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFE3F8EF),
-                            borderRadius: BorderRadius.circular(16),
+                            color: const Color(0xFFEAF0FF),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            validationTotal == 0
-                                ? 'Validasi target $target: belum ada prediksi stabil.'
-                                : 'Validasi target $target: $validationCorrect/$validationTotal benar (${validationAccuracy.toStringAsFixed(1)}%).',
+                            activeSequence.isEmpty
+                                ? 'Belum ada huruf yang stabil.'
+                                : activeSequence,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF087D5B),
-                              fontWeight: FontWeight.w800,
+                            style: TextStyle(
+                              color: activeSequence.isEmpty
+                                  ? const Color(0xFF7585A2)
+                                  : const Color(0xFF2864F0),
+                              fontSize: activeSequence.isEmpty ? 15 : 34,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: activeSequence.isEmpty ? 0 : 6,
                             ),
                           ),
                         ),
+                        if (autocorrectFuture != null)
+                          FutureBuilder<AutocorrectResult>(
+                            future: autocorrectFuture,
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Padding(
+                                  padding: EdgeInsets.only(top: 12),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Color(0xFF2864F0),
+                                        ),
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Memeriksa saran kata...',
+                                        style: TextStyle(
+                                          color: Color(0xFF7585A2),
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+
+                              final result = snapshot.data;
+                              if (result == null || !result.hasSuggestions) {
+                                return const SizedBox.shrink();
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 14),
+                                child: Column(
+                                  children: [
+                                    const Text(
+                                      'Mungkin maksudmu (tap untuk ubah):',
+                                      style: TextStyle(
+                                        color: Color(0xFF7585A2),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      alignment: WrapAlignment.center,
+                                      children: [
+                                        for (final word in result.suggestions)
+                                          ChoiceChip(
+                                            label: Text(word),
+                                            selected: activeSequence == word,
+                                            selectedColor: const Color(
+                                              0xFF2864F0,
+                                            ),
+                                            backgroundColor: const Color(
+                                              0xFFEAF0FF,
+                                            ),
+                                            labelStyle: TextStyle(
+                                              color: activeSequence == word
+                                                  ? Colors.white
+                                                  : const Color(0xFF2864F0),
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                            onSelected: (_) {
+                                              setSheetState(() {
+                                                activeSequence =
+                                                    activeSequence == word
+                                                    ? sequence
+                                                    : word;
+                                              });
+                                            },
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        if (displayedPredictions.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            target.isEmpty
+                                ? '${displayedPredictions.length} huruf dikenali tanpa spasi'
+                                : '${displayedPredictions.length} percobaan stabil direkam',
+                            style: const TextStyle(
+                              color: Color(0xFF7585A2),
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.center,
+                            children: displayedPredictions
+                                .map(
+                                  (letter) => Chip(
+                                    backgroundColor: const Color(0xFFEAF0FF),
+                                    label: Text(
+                                      letter,
+                                      style: const TextStyle(
+                                        color: Color(0xFF2864F0),
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ],
+                        if (target.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE3F8EF),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              validationTotal == 0
+                                  ? 'Validasi target $target: belum ada prediksi stabil.'
+                                  : 'Validasi target $target: $validationCorrect/$validationTotal benar (${validationAccuracy.toStringAsFixed(1)}%).',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF087D5B),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  _savedVideoPath == null
-                      ? 'Video tidak berhasil disimpan.'
-                      : 'Video tersimpan di:\n$_savedVideoPath',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF7585A2),
-                    fontSize: 12,
+                  const SizedBox(height: 14),
+                  Text(
+                    _savedVideoPath == null
+                        ? 'Video tidak berhasil disimpan.'
+                        : 'Video tersimpan di:\n$_savedVideoPath',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF7585A2),
+                      fontSize: 12,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1028,35 +1092,22 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  int _imageRotation(CameraController controller) {
-    const deviceDegrees = <DeviceOrientation, int>{
-      DeviceOrientation.portraitUp: 0,
-      DeviceOrientation.landscapeLeft: 90,
-      DeviceOrientation.portraitDown: 180,
-      DeviceOrientation.landscapeRight: 270,
-    };
-    final captureOrientation =
-        controller.value.lockedCaptureOrientation ??
-        controller.value.deviceOrientation;
-    final device = deviceDegrees[captureOrientation] ?? 0;
-    final sensor = controller.description.sensorOrientation;
-    return controller.description.lensDirection == CameraLensDirection.front
-        ? (sensor + device) % 360
-        : (sensor - device + 360) % 360;
-  }
-
-  Future<void> _refreshPreviewSize(CameraController controller) {
-    return synchronizeCameraPreviewSize(
-      controller,
-      isCurrent: () => mounted && identical(controller, _controller),
+  Future<void> _refreshPreviewSize(CameraController controller) async {
+    bool isCurrent() => mounted && identical(controller, _controller);
+    await synchronizeCameraPreviewSize(controller, isCurrent: isCurrent);
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 200), () {
+        if (!isCurrent()) return Future<void>.value();
+        return synchronizeCameraPreviewSize(controller, isCurrent: isCurrent);
+      }),
     );
   }
 
   Future<void> _disposeCamera() async {
     _cameraGeneration++;
+    _resetRecognitionState();
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
-    _analysisGeneration++;
     try {
       await _queueCameraLifecycle(_releaseCamera);
     } catch (error) {
@@ -1078,12 +1129,6 @@ class _CameraScreenState extends State<CameraScreen>
     _isSessionActive = false;
     _isTargetAnalysisActive = false;
     _isTargetAnalysisStarting = false;
-    _isHandDetectionPending = false;
-    _analysisGeneration++;
-    await _handSubscription?.cancel();
-    _handSubscription = null;
-    _handLandmarker?.dispose();
-    _handLandmarker = null;
     if (controller == null) return;
     try {
       if (controller.value.isRecordingVideo) {
@@ -1104,6 +1149,16 @@ class _CameraScreenState extends State<CameraScreen>
     setState(() => _cameraError = message);
   }
 
+  void _handleCameraOperationError(Object error, String message) {
+    if (error is CameraException &&
+        (error.code.startsWith('CameraAccessDenied') ||
+            error.code == 'CameraAccessRestricted')) {
+      _setCameraError(_friendlyCameraError(error));
+      return;
+    }
+    _showMessage('$message: $error');
+  }
+
   void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -1114,9 +1169,9 @@ class _CameraScreenState extends State<CameraScreen>
   String _friendlyCameraError(CameraException error) {
     return switch (error.code) {
       'CameraAccessDenied' =>
-        'Izin kamera ditolak. Aktifkan izin dari pengaturan.',
-      'CameraAccessDeniedWithoutPrompt' =>
-        'Izin kamera diblokir. Aktifkan izin dari pengaturan.',
+        'Izin kamera ditolak. Tekan tombol di bawah untuk meminta izin lagi.',
+      'CameraAccessDeniedWithoutPrompt' => 'Izin kamera sebelumnya ditolak. Izinkan kamera dari Pengaturan aplikasi, lalu tekan Coba lagi.',
+      'CameraAccessRestricted' => 'Akses kamera dibatasi oleh perangkat dan tidak dapat diminta dari aplikasi.',
       _ => 'Kamera gagal dibuka: ${error.description ?? error.code}',
     };
   }
@@ -1125,6 +1180,8 @@ class _CameraScreenState extends State<CameraScreen>
   void dispose() {
     _photoGeneration++;
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_landmarkSubscription?.cancel());
+    _handLandmarker?.dispose();
     unawaited(_disposeCamera());
     super.dispose();
   }
@@ -1141,6 +1198,8 @@ class _CameraScreenState extends State<CameraScreen>
               .where((label) => label == _selectedTarget)
               .length
         : 0;
+    final showLiveResults = _isSessionActive || isTargetMode;
+    final showSetupControls = !_isSessionActive && !isTargetMode;
     return ColoredBox(
       key: const PageStorageKey('camera'),
       color: const Color(0xFFF4F7FC),
@@ -1165,79 +1224,92 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
           ),
-          const Positioned.fill(child: IgnorePointer(child: _DetectionFrame())),
           SafeArea(
             minimum: EdgeInsets.fromLTRB(
               16,
-              MediaQuery.paddingOf(context).top + 12 + widget.topOverlayHeight,
+              MediaQuery.paddingOf(context).top + widget.topOverlayHeight + 12,
               16,
-              102,
+              16,
             ),
             child: Column(
               children: [
-                _CameraHeader(
-                  title: 'Kamera Latihan',
-                  subtitle: 'Deteksi isyarat secara langsung',
-                  trailing: _RoundCameraButton(
-                    tooltip: 'Ganti kamera',
-                    onPressed:
-                        _cameras.length > 1 &&
-                            !_isSessionActive &&
-                            !_isTargetAnalysisStarting &&
-                            !_isStartingSession &&
-                            !_isEndingSession
-                        ? _switchCamera
-                        : null,
-                    icon: Icons.cameraswitch_rounded,
+                if (showSetupControls) ...[
+                  Container(
+                    key: const ValueKey('camera-controls'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E9F3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(child: _buildModeSelector()),
+                        const SizedBox(width: 8),
+                        StatusPill(
+                          active: _isAnalysisActive,
+                          handDetected: _handDetected,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE2E9F3)),
-                  ),
-                  child: Row(
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
-                      Expanded(child: _buildModeSelector()),
+                      Expanded(
+                        child: ActiveModelCard(
+                          model: _selectedModel.name,
+                          onTap:
+                              _isTakingPhoto ||
+                                  _isClassifyingPhoto ||
+                                  _isSavingPhotoHistory
+                              ? null
+                              : _showModelPicker,
+                        ),
+                      ),
                       const SizedBox(width: 8),
-                      _StatusPill(
-                        active: _isAnalysisActive,
-                        handDetected: _handDetected,
+                      RoundCameraButton(
+                        key: const ValueKey('camera-switch-button'),
+                        tooltip: 'Ganti kamera',
+                        onPressed:
+                            _cameras.length > 1 &&
+                                !_isTargetAnalysisStarting &&
+                                !_isStartingSession &&
+                                !_isEndingSession
+                            ? _switchCamera
+                            : null,
+                        icon: Icons.cameraswitch_rounded,
                       ),
                     ],
                   ),
+                ],
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: DetectionFrame(),
+                  ),
                 ),
-                const Spacer(),
-                _LiveResultCard(
-                  active: _isAnalysisActive,
-                  handDetected: _handDetected,
-                  eventCount: eventCount,
-                  target: _selectedTarget,
-                  latestPrediction: _latestTargetPrediction,
-                  latestConfidence: _latestTargetConfidence,
-                  correctCount: validationCorrect,
-                ),
-                const SizedBox(height: 10),
+                if (showLiveResults) ...[
+                  LiveResultCard(
+                    key: const ValueKey('camera-live-results'),
+                    active: _isAnalysisActive || _isTargetAnalysisStarting,
+                    handDetected: _handDetected,
+                    eventCount: eventCount,
+                    target: _selectedTarget,
+                    latestPrediction: _latestTargetPrediction,
+                    correctCount: validationCorrect,
+                    sessionSequence: _sessionLetters.join(' '),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 SizedBox(
+                  key: const ValueKey('camera-primary-action'),
                   width: double.infinity,
                   height: 52,
-                  child: isTargetMode
-                      ? FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFF1D6),
-                            foregroundColor: const Color(0xFF92610A),
-                          ),
-                          onPressed: _resetTargetResults,
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: Text('Reset hasil uji $_selectedTarget'),
-                        )
-                      : _isSessionActive || _isEndingSession
+                  child: _isSessionActive || _isEndingSession
                       ? FilledButton.icon(
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFFC83B31),
@@ -1248,7 +1320,26 @@ class _CameraScreenState extends State<CameraScreen>
                           label: Text(
                             _isEndingSession
                                 ? 'Menyimpan hasil...'
-                                : 'Akhiri dan lihat hasil',
+                                : 'Selesai / Simpan Sesi Latihan',
+                          ),
+                        )
+                      : isTargetMode
+                      ? FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFC83B31),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(17),
+                            ),
+                          ),
+                          onPressed: _isTargetAnalysisStarting
+                              ? null
+                              : () => unawaited(_handleTargetChanged('')),
+                          icon: const Icon(Icons.stop_circle_rounded),
+                          label: Text(
+                            _isTargetAnalysisStarting
+                                ? 'Menyiapkan deteksi...'
+                                : 'Selesai Latihan Huruf',
                           ),
                         )
                       : FilledButton.icon(
@@ -1260,17 +1351,27 @@ class _CameraScreenState extends State<CameraScreen>
                             ),
                           ),
                           onPressed:
-                              (_controller?.value.isInitialized ?? false) &&
-                                  !_isTargetAnalysisStarting &&
+                              !_isTargetAnalysisStarting &&
                                   !_isStartingSession &&
                                   !_isEndingSession
-                              ? _startSession
+                              ? _cameraError != null
+                                    ? _initializeCameras
+                                    : (_controller?.value.isInitialized ??
+                                          false)
+                                    ? _startSession
+                                    : null
                               : null,
-                          icon: const Icon(Icons.play_circle_fill_rounded),
+                          icon: Icon(
+                            _cameraError == null
+                                ? Icons.play_circle_fill_rounded
+                                : Icons.lock_open_rounded,
+                          ),
                           label: Text(
                             _isStartingSession
                                 ? 'Menyiapkan deteksi...'
-                                : 'Mulai latihan bebas',
+                                : _cameraError == null
+                                ? 'Mulai Latihan Bebas'
+                                : 'Minta Izin Kamera Lagi',
                           ),
                         ),
                 ),
@@ -1286,11 +1387,11 @@ class _CameraScreenState extends State<CameraScreen>
     final path = _photoPath;
     final prediction = _photoPrediction;
     final busy = _isTakingPhoto || _isClassifyingPhoto || _isSavingPhotoHistory;
-    final reliable =
-        prediction != null && prediction.confidence >= _minimumConfidence;
+    final colors = Theme.of(context).colorScheme;
+    final reliable = prediction?.accepted == true;
     return ColoredBox(
       key: const PageStorageKey('camera_photo'),
-      color: const Color(0xFFF4F7FC),
+      color: colors.surface,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -1301,92 +1402,80 @@ class _CameraScreenState extends State<CameraScreen>
               File(path),
               key: ValueKey(path),
               fit: BoxFit.contain,
-              errorBuilder: (_, error, stackTrace) => const Center(
+              errorBuilder: (_, error, stackTrace) => Center(
                 child: Text(
                   'Foto tidak dapat dibuka.',
-                  style: TextStyle(color: Color(0xFF172642)),
+                  style: TextStyle(color: colors.onSurface),
                 ),
               ),
             ),
-          const IgnorePointer(
+          IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xFFF4F7FC),
-                    Color(0x00000000),
-                    Color(0xFFF4F7FC),
+                    colors.surface,
+                    colors.surface.withValues(alpha: 0),
+                    colors.surface,
                   ],
                   stops: [0, 0.5, 1],
                 ),
               ),
             ),
           ),
-          if (path == null)
-            const Positioned.fill(
-              child: IgnorePointer(child: _DetectionFrame()),
-            ),
           SafeArea(
             minimum: EdgeInsets.fromLTRB(
               16,
-              MediaQuery.paddingOf(context).top + 12 + widget.topOverlayHeight,
+              MediaQuery.paddingOf(context).top + widget.topOverlayHeight + 12,
               16,
-              102,
+              16,
             ),
             child: Column(
               children: [
-                _CameraHeader(
-                  title: 'Foto Isyarat',
-                  subtitle: 'Satu foto untuk satu huruf',
-                  trailing: path == null
-                      ? _RoundCameraButton(
-                          tooltip: 'Ganti kamera',
-                          onPressed:
-                              _cameras.length > 1 && !busy && !_isInitializing
-                              ? _switchCamera
-                              : null,
-                          icon: Icons.cameraswitch_rounded,
-                        )
-                      : null,
-                ),
-                if (prediction == null) ...[
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 11,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEAF0FF),
-                        borderRadius: BorderRadius.circular(30),
-                      ),
-                      child: const Text(
-                        'MODE FOTO · SATU HURUF',
-                        style: TextStyle(
-                          color: Color(0xFF2864F0),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
-                        ),
+                const SizedBox(height: 70),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ActiveModelCard(
+                        model: _selectedModel.name,
+                        onTap: busy ? null : _showModelPicker,
                       ),
                     ),
+                    if (path == null) ...[
+                      const SizedBox(width: 8),
+                      RoundCameraButton(
+                        key: const ValueKey('camera-switch-button'),
+                        tooltip: 'Ganti kamera',
+                        onPressed:
+                            _cameras.length > 1 && !busy && !_isInitializing
+                            ? _switchCamera
+                            : null,
+                        icon: Icons.cameraswitch_rounded,
+                      ),
+                    ],
+                  ],
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: path == null
+                        ? const DetectionFrame()
+                        : const SizedBox.expand(),
                   ),
-                ],
-                const Spacer(),
+                ),
                 if (prediction != null || path != null)
                   Container(
+                    key: const ValueKey('photo-result-card'),
                     width: double.infinity,
                     padding: const EdgeInsets.all(17),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.94),
+                      color: colors.surface.withValues(alpha: 0.96),
                       borderRadius: BorderRadius.circular(22),
-                      boxShadow: const [
+                      boxShadow: [
                         BoxShadow(
-                          color: Color(0x180E2343),
+                          color: colors.shadow.withValues(alpha: 0.12),
                           blurRadius: 18,
                           offset: Offset(0, 7),
                         ),
@@ -1400,16 +1489,18 @@ class _CameraScreenState extends State<CameraScreen>
                             reliable ? prediction.label : 'Belum yakin',
                             style: TextStyle(
                               color: reliable
-                                  ? const Color(0xFF00A879)
+                                  ? colors.primary
                                   : const Color(0xFFAE7010),
                               fontSize: reliable ? 48 : 24,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
                           Text(
-                            'Keyakinan model ${(prediction.confidence * 100).toStringAsFixed(1)}%',
-                            style: const TextStyle(
-                              color: Color(0xFF7585A2),
+                            reliable
+                                ? 'Prediksi crop sepakat'
+                                : 'Prediksi crop berbeda',
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
                               fontSize: 13,
                             ),
                           ),
@@ -1424,8 +1515,8 @@ class _CameraScreenState extends State<CameraScreen>
                               ? 'Ambil ulang dengan tangan lebih jelas dan pencahayaan cukup.'
                               : 'Periksa foto, lalu tekan Deteksi. Ambil ulang jika tangan kurang jelas.',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFF52627D),
+                          style: TextStyle(
+                            color: colors.onSurfaceVariant,
                             fontSize: 13,
                           ),
                         ),
@@ -1435,37 +1526,43 @@ class _CameraScreenState extends State<CameraScreen>
                 const SizedBox(height: 14),
                 if (path == null)
                   SizedBox(
+                    key: const ValueKey('photo-primary-action'),
                     width: double.infinity,
                     height: 58,
                     child: FilledButton.icon(
+                      onPressed: !busy
+                          ? _cameraError != null
+                                ? _initializeCameras
+                                : (_controller?.value.isInitialized ?? false)
+                                ? _takePhoto
+                                : null
+                          : null,
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFF2864F0),
+                        backgroundColor: colors.primary,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: const Color(0xFF2864F0)
-                            .withValues(alpha: 0.5),
-                        disabledForegroundColor: Colors.white70,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(17),
                         ),
                       ),
-                      onPressed:
-                          !busy && (_controller?.value.isInitialized ?? false)
-                          ? _takePhoto
-                          : null,
                       icon: const Icon(Icons.camera_alt_rounded),
                       label: Text(
-                        _isTakingPhoto ? 'Mengambil foto...' : 'Ambil foto',
+                        _isTakingPhoto
+                            ? 'Mengambil foto...'
+                            : _cameraError != null
+                            ? 'Minta Izin Kamera Lagi'
+                            : 'Ambil foto',
                       ),
                     ),
                   )
                 else
                   Row(
+                    key: const ValueKey('photo-primary-action'),
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF2864F0),
-                            side: const BorderSide(color: Color(0xFFDCE4F1)),
+                            foregroundColor: colors.primary,
+                            side: BorderSide(color: colors.outlineVariant),
                             minimumSize: const Size(0, 58),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(17),
@@ -1512,14 +1609,15 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Widget _buildModeSelector() {
+    final colors = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
+        color: colors.surface,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFDCE4F1)),
-        boxShadow: const [
+        border: Border.all(color: colors.outlineVariant),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x120E2343),
+            color: colors.shadow.withValues(alpha: 0.08),
             blurRadius: 14,
             offset: Offset(0, 5),
           ),
@@ -1531,12 +1629,12 @@ class _CameraScreenState extends State<CameraScreen>
           child: DropdownButton<String>(
             value: _selectedTarget,
             isExpanded: true,
-            dropdownColor: Colors.white,
+            dropdownColor: colors.surface,
             borderRadius: BorderRadius.circular(18),
-            iconEnabledColor: const Color(0xFF2864F0),
-            iconDisabledColor: const Color(0xFF9AA8BD),
-            style: const TextStyle(
-              color: Color(0xFF172642),
+            iconEnabledColor: colors.primary,
+            iconDisabledColor: colors.onSurface.withValues(alpha: 0.38),
+            style: TextStyle(
+              color: colors.onSurface,
               fontSize: 13,
               fontWeight: FontWeight.w800,
             ),
@@ -1566,18 +1664,17 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Widget _buildCameraPreview() {
+    final colors = Theme.of(context).colorScheme;
     if (!widget.cameraEnabled) {
-      return const Center(
+      return Center(
         child: Text(
           'Kamera dinonaktifkan untuk pengujian.',
-          style: TextStyle(color: Color(0xFF52627D)),
+          style: TextStyle(color: colors.onSurfaceVariant),
         ),
       );
     }
     if (_isInitializing) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF2864F0)),
-      );
+      return Center(child: CircularProgressIndicator(color: colors.primary));
     }
     if (_cameraError != null) {
       return Center(
@@ -1586,21 +1683,21 @@ class _CameraScreenState extends State<CameraScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
+              Icon(
                 Icons.no_photography_outlined,
-                color: Color(0xFF2864F0),
+                color: colors.primary,
                 size: 48,
               ),
               const SizedBox(height: 12),
               Text(
                 _cameraError!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFF172642)),
+                style: TextStyle(color: colors.onSurface),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF2864F0),
+                  foregroundColor: colors.primary,
                 ),
                 onPressed: _initializeCameras,
                 child: const Text('Coba lagi'),
@@ -1612,327 +1709,13 @@ class _CameraScreenState extends State<CameraScreen>
     }
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) {
-      return const Center(
+      return Center(
         child: Text(
           'Kamera belum siap.',
-          style: TextStyle(color: Color(0xFF52627D)),
+          style: TextStyle(color: colors.onSurfaceVariant),
         ),
       );
     }
     return FullBleedCameraPreview(controller: controller);
   }
-}
-
-class _CameraHeader extends StatelessWidget {
-  const _CameraHeader({
-    required this.title,
-    required this.subtitle,
-    this.trailing,
-  });
-
-  final String title;
-  final String subtitle;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E9F3)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x160E2343),
-            blurRadius: 16,
-            offset: Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFF172642),
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFF596B87),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-        ],
-      ),
-    );
-  }
-}
-
-class _RoundCameraButton extends StatelessWidget {
-  const _RoundCameraButton({
-    required this.tooltip,
-    required this.onPressed,
-    required this.icon,
-  });
-
-  final String tooltip;
-  final VoidCallback? onPressed;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      style: IconButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF2864F0),
-        disabledBackgroundColor: const Color(0xFFE8EDF5),
-        disabledForegroundColor: const Color(0xFF9AA8BD),
-        minimumSize: const Size.square(48),
-        elevation: 2,
-      ),
-      tooltip: tooltip,
-      onPressed: onPressed,
-      icon: Icon(icon),
-    );
-  }
-}
-
-class _DetectionFrame extends StatelessWidget {
-  const _DetectionFrame();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: FractionallySizedBox(
-        widthFactor: 0.78,
-        heightFactor: 0.42,
-        child: Container(
-          key: const ValueKey('camera-detection-frame'),
-          decoration: BoxDecoration(
-            color: const Color(0x182864F0),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0xCC2864F0), width: 2),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.active, required this.handDetected});
-
-  final bool active;
-  final bool handDetected;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFDCE4F1)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x120E2343),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              active && handDetected
-                  ? Icons.back_hand_rounded
-                  : active
-                  ? Icons.search_rounded
-                  : Icons.pause_circle_outline,
-              size: 10,
-              color: active && handDetected
-                  ? const Color(0xFF00A879)
-                  : active
-                  ? const Color(0xFFE3A21A)
-                  : const Color(0xFF7585A2),
-            ),
-            const SizedBox(width: 7),
-            Text(
-              active && handDetected
-                  ? 'TANGAN TERDETEKSI'
-                  : active
-                  ? 'CARI TANGAN'
-                  : 'SIAP',
-              style: const TextStyle(
-                color: Color(0xFF172642),
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LiveResultCard extends StatelessWidget {
-  const _LiveResultCard({
-    required this.active,
-    required this.handDetected,
-    required this.eventCount,
-    required this.target,
-    required this.latestPrediction,
-    required this.latestConfidence,
-    required this.correctCount,
-  });
-
-  final bool active;
-  final bool handDetected;
-  final int eventCount;
-  final String target;
-  final String? latestPrediction;
-  final double? latestConfidence;
-  final int correctCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.97),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E9F3)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x140E2343),
-            blurRadius: 18,
-            offset: Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF0FF),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                target.isNotEmpty
-                    ? handDetected
-                          ? _predictionIsReliable
-                                ? latestPrediction ?? '?'
-                                : '?'
-                          : '?'
-                    : active
-                    ? '$eventCount'
-                    : '-',
-                style: const TextStyle(
-                  color: Color(0xFF2864F0),
-                  fontSize: 24,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _title,
-                    style: const TextStyle(
-                      color: Color(0xFF172642),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _description,
-                    style: const TextStyle(
-                      color: Color(0xFF7585A2),
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String get _title {
-    if (target.isNotEmpty) {
-      if (!active) return 'Deteksi otomatis menunggu kamera';
-      if (!handDetected) return 'Tampilkan tangan untuk huruf $target';
-      if (latestPrediction == null) return 'Menganalisis target $target';
-      if (!_predictionIsReliable) return 'Belum yakin, tahan pose sebentar';
-      return latestPrediction == target
-          ? 'Benar: terdeteksi $target'
-          : 'Belum tepat: terdeteksi $latestPrediction';
-    }
-    if (!active) {
-      return 'Tekan Mulai untuk latihan bebas';
-    }
-    if (!handDetected) {
-      return 'Tampilkan tangan ke kamera';
-    }
-    return 'Tangan terdeteksi';
-  }
-
-  String get _description {
-    if (target.isNotEmpty) {
-      if (!active) {
-        return 'Deteksi dimulai otomatis saat kamera siap; video tidak direkam.';
-      }
-      if (!handDetected) {
-        return 'Tangan boleh di mana saja; pastikan telapak dan jari tidak terpotong.';
-      }
-      if (latestPrediction == null || latestConfidence == null) {
-        return 'Tahan pose sebentar sampai prediksi muncul.';
-      }
-      final confidence = (latestConfidence! * 100).toStringAsFixed(1);
-      if (!_predictionIsReliable) {
-        return 'Keyakinan $confidence% masih di bawah 60% dan belum dihitung.';
-      }
-      return '$correctCount/$eventCount percobaan stabil benar | keyakinan $confidence%';
-    }
-    if (!active) {
-      return 'Semua huruf stabil akan disusun setelah sesi diakhiri.';
-    }
-    if (!handDetected) {
-      return 'Boleh di bagian mana saja; pastikan telapak dan jari tidak terpotong.';
-    }
-    return '$eventCount huruf tersimpan. Hasil disembunyikan sampai sesi diakhiri.';
-  }
-
-  bool get _predictionIsReliable =>
-      latestPrediction != null &&
-      latestConfidence != null &&
-      latestConfidence! >= 0.60;
 }

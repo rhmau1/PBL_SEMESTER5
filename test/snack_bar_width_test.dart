@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_language/main.dart';
 
 const _short = 'Gagal';
@@ -13,6 +14,7 @@ Future<double> _snackBarWidth(
   required Size size,
   required String message,
 }) async {
+  SharedPreferences.setMockInitialValues({'onboarding_completed': true});
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -20,6 +22,7 @@ Future<double> _snackBarWidth(
   await tester.pumpWidget(
     const ProviderScope(child: MyApp(cameraEnabled: false)),
   );
+  await tester.pump(const Duration(seconds: 2));
   await tester.pumpAndSettle();
 
   final context = tester.element(find.byType(Scaffold).first);

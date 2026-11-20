@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:sign_language/models/history_item.dart';
 import 'package:sign_language/models/sign_prediction.dart';
 import 'package:sign_language/screens/upload_screen.dart';
-import 'package:sign_language/services/still_image_hand_detector.dart';
 
 SignPrediction prediction(String label, double confidence) => SignPrediction(
   label: label,
@@ -17,6 +16,59 @@ SignPrediction prediction(String label, double confidence) => SignPrediction(
 Widget host(UploadScreen screen) => MaterialApp(home: Scaffold(body: screen));
 
 void main() {
+  testWidgets('pemilih model tidak overflow pada layar sempit', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(host(const UploadScreen()));
+
+    final modelSelector = find.byKey(const ValueKey('upload-model-selector'));
+    expect(modelSelector, findsOneWidget);
+    final modelCard = tester.widget<Material>(
+      find.ancestor(of: modelSelector, matching: find.byType(Material)).first,
+    );
+    expect(modelCard.color, isNot(const Color(0xFF2864F0)));
+    final modelIcon = tester.widget<Icon>(
+      find.descendant(
+        of: modelSelector,
+        matching: find.byIcon(Icons.memory_rounded),
+      ),
+    );
+    expect(modelIcon.color, const Color(0xFF2864F0));
+    expect(
+      tester
+          .widget<Text>(
+            find.descendant(of: modelSelector, matching: find.text('MODEL AI')),
+          )
+          .style
+          ?.color,
+      isNot(const Color(0xFF2864F0)),
+    );
+    await tester.tap(modelSelector);
+    await tester.pumpAndSettle();
+    expect(find.text('Pilih Model AI'), findsOneWidget);
+    final selectedModelOption = find.byKey(
+      const ValueKey('upload-model-option-svm_hog'),
+    );
+    expect(selectedModelOption, findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('upload-model-confirm')),
+          )
+          .style
+          ?.backgroundColor
+          ?.resolve({}),
+      const Color(0xFF2864F0),
+    );
+    await tester.tap(find.byKey(const ValueKey('upload-model-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Contoh isyarat'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('gambar tanpa tangan dilewati dan batch tetap berlanjut', (
     tester,
   ) async {
@@ -27,7 +79,7 @@ void main() {
           pickFiles: (_) async => [XFile('no_hand.png'), XFile('hand.png')],
           classifyFile: (path) async {
             if (path == 'no_hand.png') {
-              throw const HandImageException('Tangan tidak terdeteksi.');
+              throw const FormatException('Tangan tidak terdeteksi.');
             }
             return prediction('C', 0.95);
           },
@@ -38,6 +90,13 @@ void main() {
     );
     await tester.tap(find.text('Banyak gambar'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Pilih banyak gambar'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.textContaining('Tangan tidak terdeteksi'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('Tangan tidak terdeteksi'), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('upload-letters'))).data,

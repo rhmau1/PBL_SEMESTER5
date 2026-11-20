@@ -1,296 +1,93 @@
-import 'dart:convert';
-import 'dart:math' as math;
-
-import 'package:camera/camera.dart';
-import 'package:flutter/services.dart';
-import 'package:image/image.dart' as img;
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'dart:typed_data';
 
 import '../models/sign_prediction.dart';
-import 'image_preprocessor.dart';
 import 'still_image_hand_detector.dart';
+import 'svm_hog_classifier.dart';
+
+enum SignModel {
+  svmHog(id: 'svm_hog', name: 'SVM Hybrid (HOG+Contour+MediaPipe)');
+
+  const SignModel({required this.id, required this.name});
+
+  final String id;
+  final String name;
+}
 
 class SignClassifier {
   SignClassifier._();
 
   static final SignClassifier instance = SignClassifier._();
+  final _backend = SvmHogClassifier.instance;
+  final _stillDetector = const StillImageHandDetector();
 
-  static const _modelPath = 'assets/models/model_float16.tflite';
-  static const _labelsPath = 'assets/models/labels.json';
-  static const _landmarkReferencesPath =
-      'assets/models/landmark_references.json';
+  Future<void> initialize({SignModel model = SignModel.svmHog}) =>
+      _backend.initialize();
 
-  Interpreter? _interpreter;
-  IsolateInterpreter? _isolateInterpreter;
-  List<String> _labels = const [];
-  Map<String, List<Offset>> _landmarkReferences = const {};
-  Future<void>? _initialization;
-  img.Image? _lastContextInput;
-  img.Image? _lastTightInput;
-  SignPrediction? _lastContextPrediction;
-  SignPrediction? _lastTightPrediction;
-  SignPrediction? _lastLandmarkPrediction;
-
-  bool get isReady =>
-      _interpreter != null && _isolateInterpreter != null && _labels.isNotEmpty;
-  List<String> get labels => List.unmodifiable(_labels);
-  List<int>? get lastContextInputPng =>
-      _lastContextInput == null ? null : img.encodePng(_lastContextInput!);
-  List<int>? get lastTightInputPng =>
-      _lastTightInput == null ? null : img.encodePng(_lastTightInput!);
-  SignPrediction? get lastContextPrediction => _lastContextPrediction;
-  SignPrediction? get lastTightPrediction => _lastTightPrediction;
-  SignPrediction? get lastLandmarkPrediction => _lastLandmarkPrediction;
-
-  Future<void> initialize() => _initialization ??= _load();
-
-  Future<void> _load() async {
-    final labelsJson = jsonDecode(await rootBundle.loadString(_labelsPath));
-    _labels = List<String>.from(labelsJson['labels'] as List<dynamic>);
-    final referencesJson = jsonDecode(
-      await rootBundle.loadString(_landmarkReferencesPath),
-    ) as Map<String, dynamic>;
-    final references = referencesJson['labels'] as Map<String, dynamic>;
-    _landmarkReferences = Map<String, List<Offset>>.unmodifiable(
-      references.map(
-        (label, value) => MapEntry(
-          label,
-          (value as List<dynamic>)
-              .map((point) {
-                final coordinates = point as List<dynamic>;
-                return Offset(
-                  (coordinates[0] as num).toDouble(),
-                  (coordinates[1] as num).toDouble(),
-                );
-              })
-              .toList(growable: false),
-        ),
-      ),
-    );
-
-    final options = InterpreterOptions()..threads = 4;
-    _interpreter = await Interpreter.fromAsset(_modelPath, options: options);
-
-    final inputShape = _interpreter!.getInputTensor(0).shape;
-    final outputShape = _interpreter!.getOutputTensor(0).shape;
-    if (!_sameShape(inputShape, const [1, 28, 28, 1]) ||
-        !_sameShape(outputShape, <int>[1, _labels.length])) {
-      _interpreter!.close();
-      _interpreter = null;
-      throw StateError(
-        'Kontrak model tidak sesuai: input $inputShape, output $outputShape.',
-      );
-    }
-    _isolateInterpreter = await IsolateInterpreter.create(
-      address: _interpreter!.address,
-      debugName: 'LatihIsyaratClassifier',
-    );
-  }
-
-  Future<SignPrediction> classifyFile(String path) async {
-    const detector = StillImageHandDetector();
-    final image = await detector.loadImage(path);
-    final landmarks = await detector.detect(image);
-    if (!isReady) await initialize();
-    return _classifyHandCrops(
-      ImagePreprocessor.imageToGrayHandCrops(
-        image,
-        normalizedLandmarks: landmarks,
-      ),
-    );
-  }
-
-  Future<SignPrediction> classifyUploadFile(String path) => classifyFile(path);
-
-  Future<SignPrediction> classifyCameraFrame(
-    CameraImage cameraImage, {
-    required int rotationDegrees,
-    required bool mirrorHorizontally,
-    required List<Offset> normalizedLandmarks,
+  Future<SignPrediction> classifyFile(
+    String path, {
+    SignModel model = SignModel.svmHog,
   }) async {
-    if (!isReady) await initialize();
-    final crops = ImagePreprocessor.cameraImageToGrayCrops(
-      cameraImage,
-      rotationDegrees: rotationDegrees,
-      mirrorHorizontally: mirrorHorizontally,
-      normalizedLandmarks: normalizedLandmarks,
-    );
-    return _classifyHandCrops(crops);
-  }
-
-  Future<SignPrediction> _classifyHandCrops(CameraFrameCrops crops) async {
-    final contextInput = ImagePreprocessor.toModelImage(crops.context);
-    final contextPrediction = await _classifyModelImage(contextInput);
-    final landmarkPrediction = _classifyLandmarks(crops.orientedLandmarks);
-    _lastContextInput = contextInput;
-    _lastTightInput = null;
-    _lastContextPrediction = contextPrediction;
-    _lastTightPrediction = null;
-    _lastLandmarkPrediction = landmarkPrediction;
-    // The context crop is adaptive now, so a very strong result can return
-    // immediately and keep inference responsive on older phones.
-    if (contextPrediction.confidence >= 0.90) return contextPrediction;
-
-    final tightPrediction = await _classifyModelImage(
-      _lastTightInput = ImagePreprocessor.toModelImage(crops.tight),
-    );
-    _lastTightPrediction = tightPrediction;
-    final blended = _blendImagePredictions(contextPrediction, tightPrediction);
-    if (tightPrediction.label == contextPrediction.label) return blended;
-
-    // Disagreement between two valid hand crops is uncertainty, even if one
-    // softmax output is overconfident. Keep it below the UI acceptance limit
-    // so an unstable crop is not committed as a letter.
-    return _capPredictionConfidence(blended, 0.59);
-  }
-
-  Future<SignPrediction> classifyImage(
-    img.Image image, {
-    double cropFraction = 1,
-    Rect? normalizedCrop,
-  }) {
-    final interpreter = _interpreter;
-    if (interpreter == null) {
-      throw StateError('Model belum siap.');
+    try {
+      final image = await _stillDetector.loadImage(path);
+      final landmarks = await _stillDetector.detect(image);
+      final pts = landmarks
+          .map((p) => (x: p.dx, y: p.dy))
+          .toList(growable: false);
+      return _adapt(await _backend.classifyFileWithLandmarks(path, pts));
+    } on HandImageException {
+      return _adapt(await _backend.classifyFile(path));
     }
+  }
 
-    final modelImage = ImagePreprocessor.toModelImage(
-      image,
-      cropFraction: cropFraction,
-      normalizedCrop: normalizedCrop,
+  Future<SignPrediction> classifyUploadFile(
+    String path, {
+    SignModel model = SignModel.svmHog,
+  }) => classifyFile(path, model: model);
+
+  Future<SignPrediction?> classifyLumaWithLandmarks({
+    required Uint8List bytes,
+    required int width,
+    required int height,
+    required int stride,
+    required int pixelStride,
+    required int rotation,
+    required List<({double x, double y})> landmarks,
+  }) async {
+    final result = await _backend.classifyLumaWithLandmarks(
+      bytes: bytes,
+      width: width,
+      height: height,
+      stride: stride,
+      pixelStride: pixelStride,
+      rotation: rotation,
+      landmarks: landmarks,
     );
-    return _classifyModelImage(modelImage);
+    return result == null ? null : _adapt(result);
   }
 
-  Future<SignPrediction> _classifyModelImage(img.Image modelImage) async {
-    final isolateInterpreter = _isolateInterpreter;
-    if (isolateInterpreter == null) {
-      throw StateError('Model belum siap.');
-    }
-
-    final input = ImagePreprocessor.modelImageToInput(modelImage);
-    final output = <List<double>>[List<double>.filled(_labels.length, 0)];
-    await isolateInterpreter.run(input, output);
-    return _predictionFromScores(List<double>.from(output.first));
-  }
-
-  SignPrediction _predictionFromScores(List<double> scores) {
-    var bestIndex = 0;
-    for (var index = 1; index < scores.length; index++) {
-      if (scores[index] > scores[bestIndex]) {
-        bestIndex = index;
-      }
-    }
-    return SignPrediction(
-      label: _labels[bestIndex],
-      confidence: scores[bestIndex],
-      scores: scores,
+  Future<SignPrediction?> classifyLuma({
+    required Uint8List bytes,
+    required int width,
+    required int height,
+    required int stride,
+    required int pixelStride,
+    required int rotation,
+  }) async {
+    final result = await _backend.classifyLuma(
+      bytes: bytes,
+      width: width,
+      height: height,
+      stride: stride,
+      pixelStride: pixelStride,
+      rotation: rotation,
     );
+    return result == null ? null : _adapt(result);
   }
 
-  SignPrediction? _classifyLandmarks(List<Offset> landmarks) {
-    if (landmarks.length != 21 || _landmarkReferences.isEmpty) return null;
-    final feature = _normalizeLandmarks(landmarks);
-    final distances = <double>[];
-    for (final label in _labels) {
-      final reference = _landmarkReferences[label];
-      if (reference == null || reference.length != 21) return null;
-      final normal = _normalizeLandmarks(reference);
-      final mirrored = _normalizeLandmarks(
-        reference
-            .map((point) => Offset(1 - point.dx, point.dy))
-            .toList(growable: false),
-      );
-      distances.add(
-        math.min(
-          _meanSquaredDistance(feature, normal),
-          _meanSquaredDistance(feature, mirrored),
-        ),
-      );
-    }
-
-    final minimumDistance = distances.reduce(math.min);
-    final weights = distances
-        .map((distance) => math.exp(-(distance - minimumDistance) / 0.06))
-        .toList(growable: false);
-    final total = weights.fold<double>(0, (sum, value) => sum + value);
-    if (!total.isFinite || total <= 0) return null;
-    return _predictionFromScores(
-      weights.map((weight) => weight / total).toList(growable: false),
-    );
-  }
-
-  static List<double> _normalizeLandmarks(List<Offset> landmarks) {
-    final wrist = landmarks[0];
-    final scale = (landmarks[9] - wrist).distance;
-    if (scale <= 0.000001) return List<double>.filled(42, 0);
-    return landmarks
-        .expand(
-          (point) => <double>[
-            (point.dx - wrist.dx) / scale,
-            (point.dy - wrist.dy) / scale,
-          ],
-        )
-        .toList(growable: false);
-  }
-
-  static double _meanSquaredDistance(List<double> a, List<double> b) {
-    var sum = 0.0;
-    for (var index = 0; index < a.length; index++) {
-      final difference = a[index] - b[index];
-      sum += difference * difference;
-    }
-    return sum / a.length;
-  }
-
-  SignPrediction _blendImagePredictions(
-    SignPrediction contextPrediction,
-    SignPrediction tightPrediction,
-  ) {
-    return _predictionFromScores(
-      List<double>.generate(
-        _labels.length,
-        (index) =>
-            contextPrediction.scores[index] * 0.55 +
-            tightPrediction.scores[index] * 0.45,
-        growable: false,
-      ),
-    );
-  }
-
-  SignPrediction _capPredictionConfidence(
-    SignPrediction prediction,
-    double maximumConfidence,
-  ) {
-    if (prediction.confidence <= maximumConfidence) return prediction;
-    final uniform = 1 / _labels.length;
-    final scale =
-        (maximumConfidence - uniform) / (prediction.confidence - uniform);
-    return _predictionFromScores(
-      prediction.scores
-          .map((score) => uniform + (score - uniform) * scale)
-          .toList(growable: false),
-    );
-  }
-
-  Future<void> close() async {
-    await _isolateInterpreter?.close();
-    _isolateInterpreter = null;
-    _interpreter?.close();
-    _interpreter = null;
-    _initialization = null;
-    _lastContextInput = null;
-    _lastTightInput = null;
-    _lastContextPrediction = null;
-    _lastTightPrediction = null;
-    _lastLandmarkPrediction = null;
-  }
-
-  static bool _sameShape(List<int> actual, List<int> expected) {
-    if (actual.length != expected.length) return false;
-    for (var index = 0; index < actual.length; index++) {
-      if (actual[index] != expected[index]) return false;
-    }
-    return true;
-  }
+  SignPrediction _adapt(SvmHogPrediction result) => SignPrediction(
+    label: result.label,
+    confidence: null,
+    scores: result.scores,
+    agreement: result.accepted,
+  );
 }

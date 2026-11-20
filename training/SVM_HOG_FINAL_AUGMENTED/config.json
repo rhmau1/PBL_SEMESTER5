@@ -1,0 +1,66 @@
+{
+  "root": "/content/drive/MyDrive/LatihIsyarat_SVM_HOG",
+  "run_name": "svm_hog_mnist_fullframe_v2",
+  "seed": 42,
+  "dataset_zip_path": "",
+  "external_test_dir": "",
+  "external_test_role": "development",
+  "auto_download_zip": true,
+  "validation_folds": 5,
+  "preprocessing": {
+    "mode": "full_frame",
+    "max_source_side": 512,
+    "margin_per_side": 0.2,
+    "min_foreground_fraction": 0.02,
+    "max_foreground_fraction": 0.95,
+    "second_component_ratio": 0.35,
+    "minimum_background_difference": 12
+  },
+  "hog": {
+    "size": 64,
+    "orientations": 9,
+    "pixels_per_cell": [
+      8,
+      8
+    ],
+    "cells_per_block": [
+      2,
+      2
+    ],
+    "block_norm": "L2-Hys",
+    "transform_sqrt": true
+  },
+  "augmentation": {
+    "enabled": true,
+    "fraction": 0.35,
+    "rotation_degrees": 10,
+    "shift_fraction": 0.05,
+    "scale_min": 0.9,
+    "scale_max": 1.1,
+    "brightness": 10,
+    "contrast_min": 0.9,
+    "contrast_max": 1.1,
+    "noise_std": 2.0
+  },
+  "search": {
+    "c_values": [
+      1.0,
+      10.0,
+      100.0
+    ],
+    "gamma_values": [
+      "scale",
+      0.001
+    ],
+    "augmented_rbf_finalists": 2,
+    "svm_cache_mb": 512,
+    "linear_max_iter": 3000,
+    "linear_tol": 0.001,
+    "train_augmented_linear": false,
+    "include_linear_baseline": false
+  },
+  "evidence": {
+    "correct_per_class": 1,
+    "errors_per_class": 2
+  }
+}

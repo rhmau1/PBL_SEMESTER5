@@ -8,11 +8,15 @@ import '../models/history_item.dart';
 import '../models/sign_prediction.dart';
 import '../services/sign_classifier.dart';
 
+const _modelSelectionBlue = Color(0xFF2864F0);
+
 class UploadScreen extends StatefulWidget {
   const UploadScreen({
     super.key,
     this.onResultSaved,
     this.onBusyChanged,
+    this.selectedModel = SignModel.svmHog,
+    this.onModelChanged,
     this.pickFiles,
     this.classifyFile,
     this.saveImage,
@@ -20,6 +24,8 @@ class UploadScreen extends StatefulWidget {
 
   final Future<void> Function(HistoryItem)? onResultSaved;
   final ValueChanged<bool>? onBusyChanged;
+  final SignModel selectedModel;
+  final ValueChanged<SignModel>? onModelChanged;
   final Future<List<XFile>> Function(bool multiple)? pickFiles;
   final Future<SignPrediction> Function(String path)? classifyFile;
   final Future<String> Function(XFile file)? saveImage;
@@ -29,11 +35,19 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  static const _minimumConfidence = 0.60;
   final _picker = ImagePicker();
   final _results = <_UploadResult>[];
   bool _isProcessing = false;
   bool _multipleImages = false;
+  late SignModel _selectedModel = widget.selectedModel;
+
+  @override
+  void didUpdateWidget(covariant UploadScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedModel != widget.selectedModel) {
+      _selectedModel = widget.selectedModel;
+    }
+  }
 
   void _setBusy(bool value) {
     if (!mounted) return;
@@ -69,6 +83,75 @@ class _UploadScreenState extends State<UploadScreen> {
     return path;
   }
 
+  Future<void> _showModelPicker() async {
+    if (_isProcessing) return;
+    var selectedModel = _selectedModel;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final colors = Theme.of(context).colorScheme;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pilih Model AI',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Pilih model yang digunakan untuk deteksi isyarat.',
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 18),
+                for (final model in SignModel.values) ...[
+                  _UploadModelOption(
+                    key: ValueKey('upload-model-option-${model.id}'),
+                    model: model,
+                    selected: selectedModel == model,
+                    onTap: () => setSheetState(() => selectedModel = model),
+                  ),
+                  if (model != SignModel.values.last)
+                    const SizedBox(height: 10),
+                ],
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const ValueKey('upload-model-confirm'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _modelSelectionBlue,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        if (_selectedModel != selectedModel) {
+                          _selectedModel = selectedModel;
+                          _results.clear();
+                        }
+                      });
+                      widget.onModelChanged?.call(selectedModel);
+                      Navigator.of(sheetContext).pop();
+                    },
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Gunakan Model Terpilih'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _pickAndClassify(bool multiple) async {
     if (_isProcessing) return;
     _setBusy(true);
@@ -85,13 +168,16 @@ class _UploadScreenState extends State<UploadScreen> {
         try {
           prediction =
               await (widget.classifyFile ??
-                  SignClassifier.instance.classifyUploadFile)(path);
+                  (path) => SignClassifier.instance.classifyUploadFile(
+                    path,
+                    model: _selectedModel,
+                  ))(path);
         } catch (failure) {
           error = '$failure';
         }
         if (!mounted) return;
         if (prediction != null &&
-            prediction.confidence >= _minimumConfidence &&
+            prediction.accepted &&
             widget.onResultSaved != null) {
           try {
             path = await (widget.saveImage ?? _saveImage)(file);
@@ -101,6 +187,7 @@ class _UploadScreenState extends State<UploadScreen> {
                 gesture: prediction.label,
                 confidence: prediction.confidence,
                 source: 'upload',
+                modelId: _selectedModel.id,
                 imagePath: path,
               ),
             );
@@ -135,190 +222,212 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget build(BuildContext context) {
     const ink = Color(0xFF172642);
     const muted = Color(0xFF7585A2);
-    const blue = Color(0xFF2864F0);
-    return CustomScrollView(
-      key: const PageStorageKey('upload'),
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-          sliver: SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    const blue = _modelSelectionBlue;
+    final lightTheme = ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: blue),
+      scaffoldBackgroundColor: const Color(0xFFF5F5F5),
+      fontFamily: 'Roboto',
+      useMaterial3: true,
+    );
+    return Theme(
+      data: lightTheme,
+      child: ColoredBox(
+        color: const Color(0xFFF5F5F5),
+        child: CustomScrollView(
+          key: const PageStorageKey('upload'),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Expanded(
-                      child: Text(
-                        'Uji Gambar',
-                        style: TextStyle(
-                          color: ink,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Uji Gambar',
+                            style: TextStyle(
+                              color: ink,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
                         ),
-                      ),
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEAF0FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.info_outline_rounded,
+                            color: blue,
+                            size: 22,
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Pilih foto tangan untuk menguji deteksi abjad isyarat. Pastikan posisi jari jelas dan pencahayaan cukup.',
+                      style: TextStyle(color: Color(0xFF52627D), height: 1.5),
+                    ),
+                    const SizedBox(height: 18),
+                    _UploadActiveModelCard(
+                      model: _selectedModel.name,
+                      onTap: _isProcessing ? null : _showModelPicker,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _multipleImages
+                                  ? Colors.white
+                                  : blue,
+                              foregroundColor: _multipleImages
+                                  ? ink
+                                  : Colors.white,
+                              minimumSize: const Size(0, 52),
+                              side: BorderSide(
+                                color: _multipleImages
+                                    ? const Color(0xFFDCE4F1)
+                                    : Colors.transparent,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                            onPressed: _isProcessing
+                                ? null
+                                : () => setState(() => _multipleImages = false),
+                            icon: const Icon(Icons.image_outlined),
+                            label: const Text('Satu gambar'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: _multipleImages
+                                  ? blue
+                                  : Colors.white,
+                              foregroundColor: _multipleImages
+                                  ? Colors.white
+                                  : ink,
+                              minimumSize: const Size(0, 52),
+                              side: BorderSide(
+                                color: _multipleImages
+                                    ? Colors.transparent
+                                    : const Color(0xFFDCE4F1),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                            onPressed: _isProcessing
+                                ? null
+                                : () => setState(() => _multipleImages = true),
+                            icon: const Icon(Icons.photo_library_outlined),
+                            label: const Text('Banyak gambar'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                     Container(
-                      width: 42,
-                      height: 42,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEAF0FF),
-                        shape: BoxShape.circle,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E9),
+                        border: Border.all(color: const Color(0xFFFFDF83)),
+                        borderRadius: BorderRadius.circular(17),
                       ),
-                      child: const Icon(
-                        Icons.info_outline_rounded,
-                        color: blue,
-                        size: 22,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Pilih foto tangan untuk menguji deteksi abjad isyarat. Pastikan posisi jari jelas dan pencahayaan cukup.',
-                  style: TextStyle(color: Color(0xFF52627D), height: 1.5),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _multipleImages
-                              ? Colors.white
-                              : blue,
-                          foregroundColor: _multipleImages ? ink : Colors.white,
-                          minimumSize: const Size(0, 52),
-                          side: BorderSide(
-                            color: _multipleImages
-                                ? const Color(0xFFDCE4F1)
-                                : Colors.transparent,
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.lightbulb_rounded,
+                            color: Color(0xFFE7A514),
+                            size: 22,
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        onPressed: _isProcessing
-                            ? null
-                            : () => setState(() => _multipleImages = false),
-                        icon: const Icon(Icons.image_outlined),
-                        label: const Text('Satu gambar'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: _multipleImages
-                              ? blue
-                              : Colors.white,
-                          foregroundColor: _multipleImages ? Colors.white : ink,
-                          minimumSize: const Size(0, 52),
-                          side: BorderSide(
-                            color: _multipleImages
-                                ? Colors.transparent
-                                : const Color(0xFFDCE4F1),
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                        ),
-                        onPressed: _isProcessing
-                            ? null
-                            : () => setState(() => _multipleImages = true),
-                        icon: const Icon(Icons.photo_library_outlined),
-                        label: const Text('Banyak gambar'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF8E9),
-                    border: Border.all(color: const Color(0xFFFFDF83)),
-                    borderRadius: BorderRadius.circular(17),
-                  ),
-                  child: const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.lightbulb_rounded,
-                        color: Color(0xFFE7A514),
-                        size: 22,
-                      ),
-                      SizedBox(width: 11),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Tips hasil akurat',
-                              style: TextStyle(
-                                color: ink,
-                                fontWeight: FontWeight.w800,
-                              ),
+                          SizedBox(width: 11),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Tips hasil akurat',
+                                  style: TextStyle(
+                                    color: ink,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Gunakan satu tangan dengan seluruh jari terlihat dan latar belakang sederhana.',
+                                  style: TextStyle(
+                                    color: muted,
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
                             ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Gunakan satu tangan dengan seluruh jari terlihat dan latar belakang sederhana.',
-                              style: TextStyle(
-                                color: muted,
-                                fontSize: 12,
-                                height: 1.4,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
+                    ),
+                    if (_isProcessing) ...[
+                      const SizedBox(height: 18),
+                      const LinearProgressIndicator(),
+                      const SizedBox(height: 8),
+                      Text('Memproses gambar ${_results.length + 1}...'),
                     ],
-                  ),
+                  ],
                 ),
-                if (_isProcessing) ...[
-                  const SizedBox(height: 18),
-                  const LinearProgressIndicator(),
-                  const SizedBox(height: 8),
-                  Text('Memproses gambar ${_results.length + 1}...'),
-                ],
-              ],
+              ),
             ),
-          ),
-        ),
-        if (_results.isEmpty && !_isProcessing)
-          SliverFillRemaining(
-            hasScrollBody: false,
-            child: _EmptyUploadState(
-              isProcessing: _isProcessing,
-              multipleImages: _multipleImages,
-              onTap: _isProcessing
-                  ? null
-                  : () => _pickAndClassify(_multipleImages),
-            ),
-          )
-        else
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-            sliver: SliverList.list(
-              children: [
-                _UploadSummary(results: _results),
-                const SizedBox(height: 14),
-                _UploadActionButton(
+            if (_results.isEmpty && !_isProcessing)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _EmptyUploadState(
                   isProcessing: _isProcessing,
                   multipleImages: _multipleImages,
                   onTap: _isProcessing
                       ? null
                       : () => _pickAndClassify(_multipleImages),
                 ),
-                const SizedBox(height: 14),
-                for (var index = 0; index < _results.length; index++) ...[
-                  _ResultCard(result: _results[index], index: index),
-                  if (index < _results.length - 1) const SizedBox(height: 12),
-                ],
-              ],
-            ),
-          ),
-      ],
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                sliver: SliverList.list(
+                  children: [
+                    _UploadSummary(results: _results),
+                    const SizedBox(height: 14),
+                    _UploadActionButton(
+                      isProcessing: _isProcessing,
+                      multipleImages: _multipleImages,
+                      onTap: _isProcessing
+                          ? null
+                          : () => _pickAndClassify(_multipleImages),
+                    ),
+                    const SizedBox(height: 14),
+                    for (var index = 0; index < _results.length; index++) ...[
+                      _ResultCard(result: _results[index], index: index),
+                      if (index < _results.length - 1)
+                        const SizedBox(height: 12),
+                    ],
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -334,9 +443,135 @@ class _UploadResult {
   final SignPrediction? prediction;
   final String? error;
   final String? historyError;
-  bool get accepted =>
-      prediction != null &&
-      prediction!.confidence >= _UploadScreenState._minimumConfidence;
+  bool get accepted => prediction?.accepted == true;
+}
+
+class _UploadModelOption extends StatelessWidget {
+  const _UploadModelOption({
+    super.key,
+    required this.model,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final SignModel model;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: selected
+          ? colors.primaryContainer.withValues(alpha: 0.55)
+          : colors.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.memory_rounded, color: _modelSelectionBlue, size: 28),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      model.name,
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '24 huruf statis • Deteksi di perangkat',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: _modelSelectionBlue,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UploadActiveModelCard extends StatelessWidget {
+  const _UploadActiveModelCard({required this.onTap, required this.model});
+
+  final VoidCallback? onTap;
+  final String model;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface.withValues(alpha: 0.94),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: const ValueKey('upload-model-selector'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.memory_rounded, color: _modelSelectionBlue, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MODEL AI',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'LatihIsyarat $model',
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.expand_more_rounded, color: _modelSelectionBlue),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _UploadSummary extends StatelessWidget {
@@ -394,7 +629,7 @@ class _ResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final prediction = result.prediction;
     final accepted = result.accepted;
-    final confidence = prediction?.confidence ?? 0;
+    final confidence = prediction?.confidence;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -489,7 +724,11 @@ class _ResultCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Keyakinan ${prediction.confidenceText}',
+                        confidence != null
+                            ? 'Keyakinan ${prediction.confidenceText}'
+                            : accepted
+                            ? 'Prediksi crop sepakat'
+                            : 'Prediksi crop berbeda',
                         style: TextStyle(
                           color: accepted
                               ? const Color(0xFF00A879)
@@ -498,18 +737,20 @@ class _ResultCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 7),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: LinearProgressIndicator(
-                          value: confidence.clamp(0.0, 1.0).toDouble(),
-                          minHeight: 6,
-                          backgroundColor: const Color(0xFFE9EEF6),
-                          color: accepted
-                              ? const Color(0xFF13B986)
-                              : const Color(0xFFE5AA33),
+                      if (confidence != null) ...[
+                        const SizedBox(height: 7),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: LinearProgressIndicator(
+                            value: confidence.clamp(0.0, 1.0).toDouble(),
+                            minHeight: 6,
+                            backgroundColor: const Color(0xFFE9EEF6),
+                            color: accepted
+                                ? const Color(0xFF13B986)
+                                : const Color(0xFFE5AA33),
+                          ),
                         ),
-                      ),
+                      ],
                       if (result.historyError != null) ...[
                         const SizedBox(height: 4),
                         Text(
@@ -629,58 +870,6 @@ class _EmptyUploadState extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 20),
-          const Row(
-            children: [
-              Icon(Icons.bolt_rounded, color: Color(0xFFE8A11A), size: 20),
-              SizedBox(width: 6),
-              Text(
-                'Contoh isyarat',
-                style: TextStyle(
-                  color: Color(0xFF172642),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              for (final letter in ['a', 'b', 'c']) ...[
-                if (letter != 'a') const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(9),
-                          child: Image.asset(
-                            'assets/signs/$letter.png',
-                            width: 32,
-                            height: 32,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          letter.toUpperCase(),
-                          style: const TextStyle(
-                            color: Color(0xFF2864F0),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
           ),
         ],
       ),
