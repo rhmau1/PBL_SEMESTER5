@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
-import 'svm_hog_input.dart';
+import 'hog_image_input.dart';
 
 class HandImageException implements Exception {
   const HandImageException(this.message);
@@ -68,7 +68,7 @@ class StillImageHandDetector {
 }
 
 img.Image _decodeStillImage(String path) {
-  final image = SvmHogInput.decode(File(path).readAsBytesSync());
+  final image = HogImageInput.decode(File(path).readAsBytesSync());
   if (image == null) {
     throw const HandImageException('Format gambar tidak dapat dibaca.');
   }

@@ -8,7 +8,7 @@ import 'package:image/image.dart' as img;
 /// 1. Optional MediaPipe ROI helper (`prepareHandCropFromRoi`) when hand bbox is provided.
 /// 2. Tuned contour / skin-color segmentation (`prepareHandCrops`) for diverse backgrounds
 ///    (filters out beige/wood tables and trims excess wrist/forearm at bottom edge).
-class SvmHogInput {
+class HogImageInput {
   static img.Image? decode(Uint8List bytes) {
     final decoded = img.decodeImage(bytes);
     return decoded == null ? null : img.bakeOrientation(decoded);
@@ -47,7 +47,6 @@ class SvmHogInput {
     }
     return rotation == 0 ? source : img.copyRotate(source, angle: rotation);
   }
-
 
   /// Direct ROI cropper from normalized MediaPipe coordinates (0.0..1.0).
   static List<Uint8List> prepareHandCropFromNormalizedRoi(
@@ -95,10 +94,10 @@ class SvmHogInput {
         final v = image.numChannels == 1
             ? (255 * pixel.rNormalized).round().clamp(0, 255)
             : (0.299 * 255 * pixel.rNormalized +
-                    0.587 * 255 * pixel.gNormalized +
-                    0.114 * 255 * pixel.bNormalized)
-                .round()
-                .clamp(0, 255);
+                      0.587 * 255 * pixel.gNormalized +
+                      0.114 * 255 * pixel.bNormalized)
+                  .round()
+                  .clamp(0, 255);
         gray[y * w + x] = v;
         sum += v;
       }
@@ -267,12 +266,7 @@ class SvmHogInput {
       );
     }
 
-    final fgMask = _extractComponentMask(
-      activeMask,
-      w,
-      h,
-      selected.seedIndex,
-    );
+    final fgMask = _extractComponentMask(activeMask, w, h, selected.seedIndex);
     final dilatedFg = _dilateMask(fgMask, w, h, radius: 2);
     final fillValue = background;
 
@@ -351,7 +345,10 @@ class SvmHogInput {
   }
 
   static bool _isValidComponent(_ComponentResult comp, int w, int h) {
-    final side = math.max(comp.right - comp.left + 1, comp.bottom - comp.top + 1);
+    final side = math.max(
+      comp.right - comp.left + 1,
+      comp.bottom - comp.top + 1,
+    );
     if (comp.area < w * h * 0.015 || side < 20) return false;
     if (comp.area > w * h * 0.85) return false;
     if (comp.left == 0 &&
@@ -460,12 +457,7 @@ class SvmHogInput {
     return out;
   }
 
-  static Uint8List _dilateMask(
-    Uint8List mask,
-    int w,
-    int h, {
-    int radius = 1,
-  }) {
+  static Uint8List _dilateMask(Uint8List mask, int w, int h, {int radius = 1}) {
     final out = Uint8List(mask.length);
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {

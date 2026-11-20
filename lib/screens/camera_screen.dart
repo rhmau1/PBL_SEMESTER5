@@ -25,7 +25,7 @@ class CameraScreen extends StatefulWidget {
     this.onResultSaved,
     this.onBusyChanged,
     this.topOverlayHeight = 0,
-    this.selectedModel = SignModel.svmHog,
+    this.selectedModel = SignModel.randomForestHog,
     this.onModelChanged,
   });
 
@@ -638,7 +638,7 @@ class _CameraScreenState extends State<CameraScreen>
       });
     } catch (error) {
       if (!isCurrent()) return;
-      debugPrint('SVM-HOG frame gagal diproses: $error');
+      debugPrint('Random Forest HOG frame gagal diproses: $error');
       setState(() {
         _handDetected = false;
         _latestTargetPrediction = null;

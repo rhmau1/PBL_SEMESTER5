@@ -15,7 +15,7 @@ class UploadScreen extends StatefulWidget {
     super.key,
     this.onResultSaved,
     this.onBusyChanged,
-    this.selectedModel = SignModel.svmHog,
+    this.selectedModel = SignModel.randomForestHog,
     this.onModelChanged,
     this.pickFiles,
     this.classifyFile,

@@ -71,6 +71,7 @@ class HistoryItem {
 
   String get modelLabel => switch (modelId) {
     'svm_hog' => 'SVM + HOG',
+    'random_forest_hog' => 'Random Forest HOG',
     'camera_robust_v1' => 'Model C',
     'model_e' => 'Model E (MobileNet V2)',
     null || '' => 'Model C',

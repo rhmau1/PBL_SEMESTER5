@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
 import '../models/sign_prediction.dart';
+import 'random_forest_hog_classifier.dart';
 import 'still_image_hand_detector.dart';
-import 'svm_hog_classifier.dart';
 
 enum SignModel {
-  svmHog(id: 'svm_hog', name: 'SVM Hybrid (HOG+Contour+MediaPipe)');
+  randomForestHog(id: 'random_forest_hog', name: 'Random Forest HOG');
 
   const SignModel({required this.id, required this.name});
 
@@ -17,15 +17,15 @@ class SignClassifier {
   SignClassifier._();
 
   static final SignClassifier instance = SignClassifier._();
-  final _backend = SvmHogClassifier.instance;
+  final _backend = RandomForestHogClassifier.instance;
   final _stillDetector = const StillImageHandDetector();
 
-  Future<void> initialize({SignModel model = SignModel.svmHog}) =>
+  Future<void> initialize({SignModel model = SignModel.randomForestHog}) =>
       _backend.initialize();
 
   Future<SignPrediction> classifyFile(
     String path, {
-    SignModel model = SignModel.svmHog,
+    SignModel model = SignModel.randomForestHog,
   }) async {
     try {
       final image = await _stillDetector.loadImage(path);
@@ -41,7 +41,7 @@ class SignClassifier {
 
   Future<SignPrediction> classifyUploadFile(
     String path, {
-    SignModel model = SignModel.svmHog,
+    SignModel model = SignModel.randomForestHog,
   }) => classifyFile(path, model: model);
 
   Future<SignPrediction?> classifyLumaWithLandmarks({
@@ -84,7 +84,7 @@ class SignClassifier {
     return result == null ? null : _adapt(result);
   }
 
-  SignPrediction _adapt(SvmHogPrediction result) => SignPrediction(
+  SignPrediction _adapt(RandomForestHogPrediction result) => SignPrediction(
     label: result.label,
     confidence: null,
     scores: result.scores,

@@ -1,6 +1,6 @@
-# LatihIsyarat: SVM-HOG
+# LatihIsyarat: Random Forest HOG
 
-Branch: `RAMA-SVM-HOG`.
+Branch: `RAMA-SVM-HOG` (backend klasifikasi kini menggunakan Random Forest HOG).
 Basis frontend: `origin/silva`, commit `3190f377ef034b6fa68db3a8360b45b5ed9c1e20`.
 
 ## Yang tersedia
@@ -13,20 +13,28 @@ frontend dipertahankan.
 
 ## Deteksi di perangkat
 
-`SvmHogClassifier` menjalankan preprocessing, HOG, StandardScaler, dan RBF SVM
-augmented langsung di perangkat. API Dart menerima file foto dan buffer
+`RandomForestHogClassifier` menjalankan preprocessing, ekstraksi HOG, dan
+inferensi Random Forest langsung di perangkat. Model sumber
+`assets/models/random_forest_hog.joblib` diekspor ke format aset Dart
+`assets/models/random_forest_hog.bin.gz`. API Dart menerima file foto dan buffer
 luma kamera untuk layar Foto, Upload, dan Video. Asetnya mendukung 24 huruf
 statis. Foto diterima berdasarkan kesepakatan prediksi crop. Video mencatat
 huruf setelah tiga sampel berurutan memilih huruf yang sama.
 
-Kontrak hasil dan pengujian backend ada di
-[PRD integrasi](docs/PRD_SVM_HOG_MOBILE_INTEGRATION.md).
+Ekspor ulang model dengan menjalankan `training/SVM_HOG/export_random_forest_hog.py`
+setelah memasang `joblib==1.4.2` dan `scikit-learn==1.6.1`:
 
-## Training di Google Colab
+```bash
+python training/SVM_HOG/export_random_forest_hog.py \
+  assets/models/random_forest_hog.joblib \
+  assets/models/random_forest_hog.bin.gz
+```
 
-Upload hanya `training/SVM_HOG/TRAINING_SVM_HOG_COLAB.ipynb` ke Colab,
-lalu pilih Run all. Tidak perlu upload file Python pendamping.
-Panduan dan lokasi hasil ada di [training/SVM_HOG/README.md](training/SVM_HOG/README.md).
+Joblib adalah format pickle Python dan tidak dimuat oleh Flutter. Konverter
+hanya boleh dijalankan pada file model tepercaya.
+
+Notebook SVM-HOG lama di `training/SVM_HOG` bukan bagian dari backend inferensi
+Random Forest yang digunakan aplikasi.
 
 ## Menjalankan aplikasi
 

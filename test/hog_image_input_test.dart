@@ -4,18 +4,18 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:sign_language/services/sign_classifier.dart';
-import 'package:sign_language/services/svm_hog_classifier.dart';
-import 'package:sign_language/services/svm_hog_input.dart';
+import 'package:sign_language/services/hog_image_input.dart';
+import 'package:sign_language/services/random_forest_hog_classifier.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('rotates a stride-padded luma frame', () {
     final input = Uint8List.fromList([1, 2, 99, 3, 4, 99, 5, 6, 99]);
-    final image = SvmHogInput.fromLuma(input, 2, 3, 3, 1, 90)!;
+    final image = HogImageInput.fromLuma(input, 2, 3, 3, 1, 90)!;
     expect([image.width, image.height], [3, 2]);
     expect(image.getBytes(), [5, 3, 1, 6, 4, 2]);
-    expect(SvmHogInput.fromLuma(input, 3, 5, 3, 1, 90), isNull);
+    expect(HogImageInput.fromLuma(input, 3, 5, 3, 1, 90), isNull);
   });
 
   test('two square crops retain an off-center foreground', () {
@@ -29,7 +29,7 @@ void main() {
       y2: 94,
       color: img.ColorUint8.rgb(70, 70, 70),
     );
-    final result = SvmHogInput.prepareHandCrops(image).crops;
+    final result = HogImageInput.prepareHandCrops(image).crops;
     expect(result, hasLength(2));
     for (final crop in result) {
       expect(crop, hasLength(64 * 64));
@@ -49,8 +49,8 @@ void main() {
       y2: 108,
       color: img.ColorUint8.rgb(70, 70, 70),
     );
-    final tight = SvmHogInput.prepareHandCrops(image);
-    final wide = SvmHogInput.prepareHandCrops(image, tightFraming: false);
+    final tight = HogImageInput.prepareHandCrops(image);
+    final wide = HogImageInput.prepareHandCrops(image, tightFraming: false);
     expect(tight.rejection, isNull);
     expect(wide.rejection, isNull);
     for (var i = 0; i < 2; i++) {
@@ -63,7 +63,7 @@ void main() {
 
   test('foreground failure gives a reason before classification', () {
     final image = img.Image(width: 96, height: 96, numChannels: 1);
-    final result = SvmHogInput.prepareHandCrops(image);
+    final result = HogImageInput.prepareHandCrops(image);
     expect(result.crops, isEmpty);
     expect(result.rejection, contains('kurang kontras'));
   });
@@ -76,13 +76,13 @@ void main() {
       final gain = 0.48 + 0.5 * pixel.x / 127;
       pixel.r = ((foreground ? 95 : 245) * gain).round();
     }
-    final baseline = SvmHogInput.prepareHandCrops(
+    final baseline = HogImageInput.prepareHandCrops(
       image,
       includePhotoChecks: true,
       correctUnevenLighting: false,
     );
     expect(baseline.rejection, contains('Tepi foto terlalu bervariasi'));
-    final corrected = SvmHogInput.prepareHandCrops(
+    final corrected = HogImageInput.prepareHandCrops(
       image,
       includePhotoChecks: true,
     );
@@ -96,13 +96,16 @@ void main() {
     for (final pixel in image) {
       pixel.r = pixel.x < 64 ? 110 : 240;
     }
-    final sharp = SvmHogInput.prepareHandCrops(image, includePhotoChecks: true);
+    final sharp = HogImageInput.prepareHandCrops(
+      image,
+      includePhotoChecks: true,
+    );
     expect(sharp.crops, isEmpty);
     expect(sharp.rejection, contains('kurang kontras'));
     for (final pixel in image) {
       pixel.r = (110 + 130 * pixel.x / 127).round();
     }
-    final smooth = SvmHogInput.prepareHandCrops(
+    final smooth = HogImageInput.prepareHandCrops(
       image,
       includePhotoChecks: true,
     );
@@ -119,16 +122,16 @@ void main() {
         final shadow = (acrossX ? pixel.x : pixel.y) < 58;
         pixel.r = ((hand ? 95 : 245) * (shadow ? .48 : .98)).round();
       }
-      final before = SvmHogInput.prepareHandCrops(
+      final before = HogImageInput.prepareHandCrops(
         image,
         includePhotoChecks: true,
         correctUnevenLighting: false,
       );
-      final after = SvmHogInput.prepareHandCrops(
+      final after = HogImageInput.prepareHandCrops(
         image,
         includePhotoChecks: true,
       );
-      final camera = SvmHogInput.prepareHandCrops(image);
+      final camera = HogImageInput.prepareHandCrops(image);
       expect(before.crops, isEmpty);
       expect(after.rejection, isNull);
       expect(after.crops, hasLength(4));
@@ -141,7 +144,7 @@ void main() {
     for (final pixel in image) {
       pixel.r = pixel.x < 44 + pixel.y ~/ 4 ? 115 : 245;
     }
-    final result = SvmHogInput.prepareHandCrops(
+    final result = HogImageInput.prepareHandCrops(
       image,
       includePhotoChecks: true,
     );
@@ -161,8 +164,8 @@ void main() {
         y2: 94,
         color: img.ColorUint8.rgb(70, 70, 70),
       );
-      final baseline = SvmHogInput.prepareHandCrops(image).crops;
-      final photos = SvmHogInput.prepareHandCrops(
+      final baseline = HogImageInput.prepareHandCrops(image).crops;
+      final photos = HogImageInput.prepareHandCrops(
         image,
         includePhotoChecks: true,
       ).crops;
@@ -179,7 +182,7 @@ void main() {
   test(
     'real classifier rejects blank input after loading the bundled asset',
     () async {
-      final classifier = SvmHogClassifier.instance;
+      final classifier = RandomForestHogClassifier.instance;
       await Future.wait([classifier.initialize(), classifier.initialize()]);
       final prediction = await classifier.classifyLuma(
         bytes: Uint8List(96 * 96),
@@ -194,9 +197,11 @@ void main() {
   );
 
   test(
-    'file inference returns an SVM result through the backend API',
+    'file inference returns a random forest result through the backend API',
     () async {
-      final directory = await Directory.systemTemp.createTemp('svm_hog_test_');
+      final directory = await Directory.systemTemp.createTemp(
+        'random_forest_hog_test_',
+      );
       addTearDown(() => directory.delete(recursive: true));
       final image = img.Image(width: 150, height: 120, numChannels: 3);
       img.fill(image, color: img.ColorUint8.rgb(230, 230, 230));
@@ -210,7 +215,9 @@ void main() {
       );
       final path = '${directory.path}/foreground.png';
       await File(path).writeAsBytes(img.encodePng(image));
-      final prediction = await SvmHogClassifier.instance.classifyFile(path);
+      final prediction = await RandomForestHogClassifier.instance.classifyFile(
+        path,
+      );
       expect('ABCDEFGHIKLMNOPQRSTUVWXY', contains(prediction.label));
       expect(prediction.scores, hasLength(24));
       expect(prediction.scores.every((score) => score.isFinite), isTrue);

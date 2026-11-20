@@ -50,7 +50,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pilih Model AI'), findsOneWidget);
     final selectedModelOption = find.byKey(
-      const ValueKey('upload-model-option-svm_hog'),
+      const ValueKey('upload-model-option-random_forest_hog'),
     );
     expect(selectedModelOption, findsOneWidget);
     expect(

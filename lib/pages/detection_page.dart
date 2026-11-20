@@ -34,7 +34,7 @@ class DetectionPage extends StatefulWidget {
 class _DetectionPageState extends State<DetectionPage> {
   late int _selectedTab = widget.initialTab;
   bool _busy = false;
-  SignModel _selectedModel = SignModel.svmHog;
+  SignModel _selectedModel = SignModel.randomForestHog;
 
   void _setBusy(bool value) {
     if (!mounted || value == _busy) return;

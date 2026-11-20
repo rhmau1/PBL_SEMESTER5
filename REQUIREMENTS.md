@@ -19,8 +19,8 @@ folder project. Tidak perlu menyimpan SDK, cache dependency, atau APK di Git.
 
 Gunakan versi Flutter yang sama untuk hasil build yang konsisten. Workflow CI
 di `.github/workflows/ci.yml` memakai Flutter 3.47.5. Project ditujukan untuk
-Android. Branch RAMA-SVM-HOG menyediakan backend inferensi Dart dan aset model
-untuk disambungkan oleh tim frontend.
+Android. Backend inferensi Random Forest HOG dan aset runtime RFH1 tersedia di
+repo. Aset `.joblib` adalah sumber konversi, bukan format runtime Flutter.
 
 ## Instalasi
 
@@ -85,7 +85,7 @@ Versi berikut berasal dari `pubspec.lock` hasil merge:
 | flutter_riverpod | 2.6.1 | State aplikasi dan riwayat |
 
 Package tidak perlu diinstal satu per satu. `flutter pub get` memasang
-dependency Flutter. Aset inferensi SVM-HOG sudah tersedia di repo.
+dependency Flutter. Aset inferensi Random Forest HOG tersedia di repo.
 
 ## USB dan menjalankan di HP
 
@@ -159,7 +159,7 @@ debug key; siapkan signing produksi sebelum distribusi resmi.
   model HP dan tahap terjadinya masalah untuk validasi.
 
 Jangan mengirim `build`, `.dart_tool`, `android/local.properties`, SDK, atau
-JDK ke Git. Pertahankan aset SVM-HOG, label, metadata, foto kamus,
+JDK ke Git. Pertahankan aset Random Forest HOG, label, metadata, foto kamus,
 source native bridge, dan `pubspec.lock` agar tim dapat menjalankan aplikasi.
 
 ## Lampiran opsional: Windows

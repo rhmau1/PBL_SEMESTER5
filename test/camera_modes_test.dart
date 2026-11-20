@@ -283,7 +283,10 @@ void main() {
       find.byKey(const PageStorageKey('camera')),
     );
     expect(cameraSurface.color, const Color(0xFF090D16));
-    expect(find.text('LatihIsyarat ${SignModel.svmHog.name}'), findsWidgets);
+    expect(
+      find.text('LatihIsyarat ${SignModel.randomForestHog.name}'),
+      findsWidgets,
+    );
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
@@ -358,7 +361,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('camera-model-selector')));
       await tester.pumpAndSettle();
       expect(find.text('Pilih Model AI'), findsOneWidget);
-      expect(find.text(SignModel.svmHog.name), findsWidgets);
+      expect(find.text(SignModel.randomForestHog.name), findsWidgets);
       expect(find.text('Model E'), findsNothing);
       expect(
         tester
@@ -371,13 +374,13 @@ void main() {
         const Color(0xFF2864F0),
       );
       await tester.tap(
-        find.byKey(const ValueKey('camera-model-option-svm_hog')),
+        find.byKey(const ValueKey('camera-model-option-random_forest_hog')),
       );
       await tester.tap(find.byKey(const ValueKey('camera-model-confirm')));
       await tester.pumpAndSettle();
       expect(find.text('Pilih Model AI'), findsNothing);
       expect(
-        find.text('LatihIsyarat ${SignModel.svmHog.name}'),
+        find.text('LatihIsyarat ${SignModel.randomForestHog.name}'),
         findsOneWidget,
       );
       final modelCard = tester.widget<Material>(
@@ -434,15 +437,23 @@ void main() {
     await tester.tap(modelSelector);
     await tester.pumpAndSettle();
     expect(find.text('Pilih Model AI'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('upload-model-option-svm_hog')));
+    await tester.tap(
+      find.byKey(const ValueKey('upload-model-option-random_forest_hog')),
+    );
     await tester.tap(find.byKey(const ValueKey('upload-model-confirm')));
     await tester.pumpAndSettle();
     expect(find.text('Pilih Model AI'), findsNothing);
-    expect(find.text('LatihIsyarat ${SignModel.svmHog.name}'), findsOneWidget);
+    expect(
+      find.text('LatihIsyarat ${SignModel.randomForestHog.name}'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Video'));
     await tester.pumpAndSettle();
-    expect(find.text('LatihIsyarat ${SignModel.svmHog.name}'), findsOneWidget);
+    expect(
+      find.text('LatihIsyarat ${SignModel.randomForestHog.name}'),
+      findsOneWidget,
+    );
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
