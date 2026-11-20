@@ -151,6 +151,7 @@ class _LetterCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
+      key: ValueKey('dictionary-letter-${item.letter}'),
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       elevation: 2,
