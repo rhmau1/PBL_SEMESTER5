@@ -16,6 +16,59 @@ SignPrediction prediction(String label, double confidence) => SignPrediction(
 Widget host(UploadScreen screen) => MaterialApp(home: Scaffold(body: screen));
 
 void main() {
+  testWidgets('pemilih model tidak overflow pada layar sempit', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(host(const UploadScreen()));
+
+    final modelSelector = find.byKey(const ValueKey('upload-model-selector'));
+    expect(modelSelector, findsOneWidget);
+    final modelCard = tester.widget<Material>(
+      find.ancestor(of: modelSelector, matching: find.byType(Material)).first,
+    );
+    expect(modelCard.color, isNot(const Color(0xFF2864F0)));
+    final modelIcon = tester.widget<Icon>(
+      find.descendant(
+        of: modelSelector,
+        matching: find.byIcon(Icons.memory_rounded),
+      ),
+    );
+    expect(modelIcon.color, const Color(0xFF2864F0));
+    expect(
+      tester
+          .widget<Text>(
+            find.descendant(of: modelSelector, matching: find.text('MODEL AI')),
+          )
+          .style
+          ?.color,
+      isNot(const Color(0xFF2864F0)),
+    );
+    await tester.tap(modelSelector);
+    await tester.pumpAndSettle();
+    expect(find.text('Pilih Model AI'), findsOneWidget);
+    final selectedModelOption = find.byKey(
+      const ValueKey('upload-model-option-svm_hog'),
+    );
+    expect(selectedModelOption, findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('upload-model-confirm')),
+          )
+          .style
+          ?.backgroundColor
+          ?.resolve({}),
+      const Color(0xFF2864F0),
+    );
+    await tester.tap(find.byKey(const ValueKey('upload-model-confirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('Contoh isyarat'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('gambar tanpa tangan dilewati dan batch tetap berlanjut', (
     tester,
   ) async {

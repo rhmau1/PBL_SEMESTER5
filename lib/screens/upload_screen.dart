@@ -8,6 +8,8 @@ import '../models/history_item.dart';
 import '../models/sign_prediction.dart';
 import '../services/sign_classifier.dart';
 
+const _modelSelectionBlue = Color(0xFF2864F0);
+
 class UploadScreen extends StatefulWidget {
   const UploadScreen({
     super.key,
@@ -37,6 +39,15 @@ class _UploadScreenState extends State<UploadScreen> {
   final _results = <_UploadResult>[];
   bool _isProcessing = false;
   bool _multipleImages = false;
+  late SignModel _selectedModel = widget.selectedModel;
+
+  @override
+  void didUpdateWidget(covariant UploadScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedModel != widget.selectedModel) {
+      _selectedModel = widget.selectedModel;
+    }
+  }
 
   void _setBusy(bool value) {
     if (!mounted) return;
@@ -72,6 +83,75 @@ class _UploadScreenState extends State<UploadScreen> {
     return path;
   }
 
+  Future<void> _showModelPicker() async {
+    if (_isProcessing) return;
+    var selectedModel = _selectedModel;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final colors = Theme.of(context).colorScheme;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pilih Model AI',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Pilih model yang digunakan untuk deteksi isyarat.',
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 18),
+                for (final model in SignModel.values) ...[
+                  _UploadModelOption(
+                    key: ValueKey('upload-model-option-${model.id}'),
+                    model: model,
+                    selected: selectedModel == model,
+                    onTap: () => setSheetState(() => selectedModel = model),
+                  ),
+                  if (model != SignModel.values.last)
+                    const SizedBox(height: 10),
+                ],
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const ValueKey('upload-model-confirm'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _modelSelectionBlue,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        if (_selectedModel != selectedModel) {
+                          _selectedModel = selectedModel;
+                          _results.clear();
+                        }
+                      });
+                      widget.onModelChanged?.call(selectedModel);
+                      Navigator.of(sheetContext).pop();
+                    },
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Gunakan Model Terpilih'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _pickAndClassify(bool multiple) async {
     if (_isProcessing) return;
     _setBusy(true);
@@ -90,7 +170,7 @@ class _UploadScreenState extends State<UploadScreen> {
               await (widget.classifyFile ??
                   (path) => SignClassifier.instance.classifyUploadFile(
                     path,
-                    model: widget.selectedModel,
+                    model: _selectedModel,
                   ))(path);
         } catch (failure) {
           error = '$failure';
@@ -107,7 +187,7 @@ class _UploadScreenState extends State<UploadScreen> {
                 gesture: prediction.label,
                 confidence: prediction.confidence,
                 source: 'upload',
-                modelId: widget.selectedModel.id,
+                modelId: _selectedModel.id,
                 imagePath: path,
               ),
             );
@@ -142,7 +222,7 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget build(BuildContext context) {
     const ink = Color(0xFF172642);
     const muted = Color(0xFF7585A2);
-    const blue = Color(0xFF2864F0);
+    const blue = _modelSelectionBlue;
     final lightTheme = ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: blue),
       scaffoldBackgroundColor: const Color(0xFFF5F5F5),
@@ -196,52 +276,9 @@ class _UploadScreenState extends State<UploadScreen> {
                       style: TextStyle(color: Color(0xFF52627D), height: 1.5),
                     ),
                     const SizedBox(height: 18),
-                    Container(
-                      key: const ValueKey('upload-model-selector'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: const Color(0xFFDCE4F1)),
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.memory_rounded, color: blue),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Text(
-                              'Model AI',
-                              style: TextStyle(
-                                color: ink,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          DropdownButton<SignModel>(
-                            key: const ValueKey('upload-model-dropdown'),
-                            value: widget.selectedModel,
-                            underline: const SizedBox.shrink(),
-                            items: SignModel.values
-                                .map(
-                                  (model) => DropdownMenuItem(
-                                    value: model,
-                                    child: Text(model.name),
-                                  ),
-                                )
-                                .toList(growable: false),
-                            onChanged: _isProcessing
-                                ? null
-                                : (model) {
-                                    if (model != null) {
-                                      widget.onModelChanged?.call(model);
-                                    }
-                                  },
-                          ),
-                        ],
-                      ),
+                    _UploadActiveModelCard(
+                      model: _selectedModel.name,
+                      onTap: _isProcessing ? null : _showModelPicker,
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -407,6 +444,134 @@ class _UploadResult {
   final String? error;
   final String? historyError;
   bool get accepted => prediction?.accepted == true;
+}
+
+class _UploadModelOption extends StatelessWidget {
+  const _UploadModelOption({
+    super.key,
+    required this.model,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final SignModel model;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: selected
+          ? colors.primaryContainer.withValues(alpha: 0.55)
+          : colors.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.memory_rounded, color: _modelSelectionBlue, size: 28),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      model.name,
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '24 huruf statis • Deteksi di perangkat',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: _modelSelectionBlue,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UploadActiveModelCard extends StatelessWidget {
+  const _UploadActiveModelCard({required this.onTap, required this.model});
+
+  final VoidCallback? onTap;
+  final String model;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface.withValues(alpha: 0.94),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: const ValueKey('upload-model-selector'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.memory_rounded, color: _modelSelectionBlue, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'MODEL AI',
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'LatihIsyarat $model',
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.expand_more_rounded, color: _modelSelectionBlue),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _UploadSummary extends StatelessWidget {
@@ -705,58 +870,6 @@ class _EmptyUploadState extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 20),
-          const Row(
-            children: [
-              Icon(Icons.bolt_rounded, color: Color(0xFFE8A11A), size: 20),
-              SizedBox(width: 6),
-              Text(
-                'Contoh isyarat',
-                style: TextStyle(
-                  color: Color(0xFF172642),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              for (final letter in ['a', 'b', 'c']) ...[
-                if (letter != 'a') const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(9),
-                          child: Image.asset(
-                            'assets/signs/$letter.png',
-                            width: 32,
-                            height: 32,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          letter.toUpperCase(),
-                          style: const TextStyle(
-                            color: Color(0xFF2864F0),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
           ),
         ],
       ),

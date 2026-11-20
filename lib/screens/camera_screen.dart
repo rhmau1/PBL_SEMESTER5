@@ -15,6 +15,8 @@ import '../services/sign_classifier.dart';
 import '../services/stable_sign.dart';
 import '../widgets/full_bleed_camera_preview.dart';
 
+const _modelSelectionBlue = Color(0xFF2864F0);
+
 class CameraScreen extends StatefulWidget {
   const CameraScreen({
     super.key,
@@ -128,6 +130,10 @@ class _CameraScreenState extends State<CameraScreen>
                   width: double.infinity,
                   child: FilledButton.icon(
                     key: const ValueKey('camera-model-confirm'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _modelSelectionBlue,
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: () {
                       setState(() {
                         if (_selectedModel != selectedModel) {
@@ -580,14 +586,16 @@ class _CameraScreenState extends State<CameraScreen>
       SignPrediction? prediction;
       if (hasFreshMpHand) {
         final sensorRot = controller.description.sensorOrientation;
-        final landmarks = _latestHands.first.landmarks.map((lm) {
-          return switch (sensorRot) {
-            90 => (x: 1.0 - lm.y, y: lm.x),
-            180 => (x: 1.0 - lm.x, y: 1.0 - lm.y),
-            270 => (x: lm.y, y: 1.0 - lm.x),
-            _ => (x: lm.x, y: lm.y),
-          };
-        }).toList(growable: false);
+        final landmarks = _latestHands.first.landmarks
+            .map((lm) {
+              return switch (sensorRot) {
+                90 => (x: 1.0 - lm.y, y: lm.x),
+                180 => (x: 1.0 - lm.x, y: 1.0 - lm.y),
+                270 => (x: lm.y, y: 1.0 - lm.x),
+                _ => (x: lm.x, y: lm.y),
+              };
+            })
+            .toList(growable: false);
         prediction = await SignClassifier.instance.classifyLumaWithLandmarks(
           bytes: luma.bytes,
           width: image.width,
@@ -1852,7 +1860,7 @@ class _ModelOption extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(Icons.memory_rounded, color: colors.primary, size: 28),
+              Icon(Icons.memory_rounded, color: _modelSelectionBlue, size: 28),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -1880,7 +1888,7 @@ class _ModelOption extends StatelessWidget {
                 selected
                     ? Icons.radio_button_checked_rounded
                     : Icons.radio_button_unchecked_rounded,
-                color: colors.primary,
+                color: _modelSelectionBlue,
               ),
             ],
           ),
@@ -1915,7 +1923,7 @@ class _ActiveModelCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.memory_rounded, color: colors.primary, size: 18),
+              Icon(Icons.memory_rounded, color: _modelSelectionBlue, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -1944,7 +1952,7 @@ class _ActiveModelCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(Icons.expand_more_rounded, color: colors.onSurfaceVariant),
+              Icon(Icons.expand_more_rounded, color: _modelSelectionBlue),
             ],
           ),
         ),

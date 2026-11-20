@@ -283,7 +283,7 @@ void main() {
       find.byKey(const PageStorageKey('camera')),
     );
     expect(cameraSurface.color, const Color(0xFF090D16));
-    expect(find.text('LatihIsyarat SVM + HOG'), findsWidgets);
+    expect(find.text('LatihIsyarat ${SignModel.svmHog.name}'), findsWidgets);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
@@ -358,15 +358,49 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('camera-model-selector')));
       await tester.pumpAndSettle();
       expect(find.text('Pilih Model AI'), findsOneWidget);
-      expect(find.text('SVM + HOG'), findsWidgets);
+      expect(find.text(SignModel.svmHog.name), findsWidgets);
       expect(find.text('Model E'), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const ValueKey('camera-model-confirm')),
+            )
+            .style
+            ?.backgroundColor
+            ?.resolve({}),
+        const Color(0xFF2864F0),
+      );
       await tester.tap(
         find.byKey(const ValueKey('camera-model-option-svm_hog')),
       );
       await tester.tap(find.byKey(const ValueKey('camera-model-confirm')));
       await tester.pumpAndSettle();
       expect(find.text('Pilih Model AI'), findsNothing);
-      expect(find.text('LatihIsyarat SVM + HOG'), findsOneWidget);
+      expect(
+        find.text('LatihIsyarat ${SignModel.svmHog.name}'),
+        findsOneWidget,
+      );
+      final modelCard = tester.widget<Material>(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('camera-model-selector')),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(modelCard.color, isNot(const Color(0xFF2864F0)));
+      final modelSelector = find.byKey(const ValueKey('camera-model-selector'));
+      expect(
+        tester
+            .widget<Icon>(
+              find.descendant(
+                of: modelSelector,
+                matching: find.byIcon(Icons.memory_rounded),
+              ),
+            )
+            .color,
+        const Color(0xFF2864F0),
+      );
     }
 
     await tester.pumpWidget(_screen());
@@ -395,23 +429,20 @@ void main() {
     await tester.tap(find.text('Upload'));
     await tester.pumpAndSettle();
 
-    final modelDropdown = find.byKey(const ValueKey('upload-model-dropdown'));
-    expect(
-      tester.widget<DropdownButton<SignModel>>(modelDropdown).value,
-      SignModel.svmHog,
-    );
-    await tester.tap(modelDropdown);
+    final modelSelector = find.byKey(const ValueKey('upload-model-selector'));
+    expect(modelSelector, findsOneWidget);
+    await tester.tap(modelSelector);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('SVM + HOG').last);
+    expect(find.text('Pilih Model AI'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('upload-model-option-svm_hog')));
+    await tester.tap(find.byKey(const ValueKey('upload-model-confirm')));
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<DropdownButton<SignModel>>(modelDropdown).value,
-      SignModel.svmHog,
-    );
+    expect(find.text('Pilih Model AI'), findsNothing);
+    expect(find.text('LatihIsyarat ${SignModel.svmHog.name}'), findsOneWidget);
 
     await tester.tap(find.text('Video'));
     await tester.pumpAndSettle();
-    expect(find.text('LatihIsyarat SVM + HOG'), findsOneWidget);
+    expect(find.text('LatihIsyarat ${SignModel.svmHog.name}'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
