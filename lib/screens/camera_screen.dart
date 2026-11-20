@@ -301,6 +301,7 @@ class _CameraScreenState extends State<CameraScreen>
         return;
       }
       setState(() => _controller = controller);
+      unawaited(SignClassifier.instance.initialize(model: _selectedModel));
       await _refreshPreviewSize(controller);
       if (!widget.photoMode && _selectedTarget.isNotEmpty) {
         await _startTargetAnalysis(resetResults: false);
@@ -399,8 +400,9 @@ class _CameraScreenState extends State<CameraScreen>
         // CameraX rebinds its use cases when recording starts; reapply the
         // portrait target rotation immediately before that transition.
         await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
-        invalidateCameraPreviewGeometry(controller);
-        await controller.startVideoRecording(onAvailable: _onCameraFrame);
+        if (!controller.value.isStreamingImages) {
+          await controller.startImageStream(_onCameraFrame);
+        }
         await _refreshPreviewSize(controller);
       });
     } catch (error) {
@@ -665,7 +667,6 @@ class _CameraScreenState extends State<CameraScreen>
       await _queueCameraLifecycle(() async {
         if (controller == null || !identical(controller, _controller)) return;
         if (controller.value.isRecordingVideo) {
-          invalidateCameraPreviewGeometry(controller);
           final recording = await controller.stopVideoRecording();
           // Stopping recording rebinds the preview use case. Restore its
           // portrait target rotation before refreshing the preview transform.
@@ -992,10 +993,14 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  Future<void> _refreshPreviewSize(CameraController controller) {
-    return synchronizeCameraPreviewSize(
-      controller,
-      isCurrent: () => mounted && identical(controller, _controller),
+  Future<void> _refreshPreviewSize(CameraController controller) async {
+    bool isCurrent() => mounted && identical(controller, _controller);
+    await synchronizeCameraPreviewSize(controller, isCurrent: isCurrent);
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 200), () {
+        if (!isCurrent()) return Future<void>.value();
+        return synchronizeCameraPreviewSize(controller, isCurrent: isCurrent);
+      }),
     );
   }
 
@@ -1085,7 +1090,7 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   Widget build(BuildContext context) {
     if (widget.photoMode) return _buildPhotoScreen();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const isDark = false;
     final isTargetMode = _selectedTarget.isNotEmpty;
     final eventCount = _selectedTarget.isEmpty
         ? _sessionLetters.length
@@ -1211,6 +1216,7 @@ class _CameraScreenState extends State<CameraScreen>
                     target: _selectedTarget,
                     latestPrediction: _latestTargetPrediction,
                     correctCount: validationCorrect,
+                    sessionSequence: _sessionLetters.join(' '),
                   ),
                   const SizedBox(height: 10),
                 ],
@@ -1970,6 +1976,7 @@ class _LiveResultCard extends StatelessWidget {
     required this.target,
     required this.latestPrediction,
     required this.correctCount,
+    this.sessionSequence = '',
   });
 
   final bool active;
@@ -1978,12 +1985,15 @@ class _LiveResultCard extends StatelessWidget {
   final String target;
   final String? latestPrediction;
   final int correctCount;
+  final String sessionSequence;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final output = target.isNotEmpty
         ? (handDetected ? latestPrediction : null) ?? '—'
+        : sessionSequence.isNotEmpty
+        ? sessionSequence
         : active && handDetected
         ? 'Menganalisis...'
         : '—';
