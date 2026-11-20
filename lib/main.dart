@@ -55,7 +55,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home: SplashScreen(
         nextScreen: home,
         firstLaunchScreen: OnboardingScreen(nextScreen: home),
