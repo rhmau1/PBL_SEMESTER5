@@ -36,30 +36,30 @@ class LlmAutocorrectService {
   final Map<String, AutocorrectResult> _cache = {};
 
   static const String _systemPrompt = '''
-Kamu adalah sistem autocorrect khusus untuk hasil deteksi huruf bahasa isyarat ASL (Sign Language MNIST, 24 kelas A-Y tanpa J dan Z).
-Tugasmu: mengoreksi satu kata hasil deteksi kamera menjadi kata yang valid dalam Bahasa Indonesia atau Bahasa Inggris umum.
+Kamu adalah sistem pemisah kata (spasi) dan autocorrect untuk hasil deteksi huruf bahasa isyarat ASL (24 kelas A-Y tanpa J dan Z).
+Input dari pengguna adalah 1 kata ATAU 1 kalimat pendek yang seluruh hurufnya digabung TANPA SPASI, dan mungkin mengandung salah deteksi huruf.
+
+TUGASMU:
+1. Pisahkan deretan huruf tanpa spasi menjadi kata-kata yang bermakna dengan spasi (prioritaskan Bahasa Indonesia baku sesuai KBBI, atau Bahasa Inggris umum jika memang kalimat Inggris).
+2. Koreksi huruf yang salah deteksi HANYA menggunakan aturan Confusion Map di bawah ini.
 
 ATURAN KEMIRIPAN HURUF (CONFUSION MAP):
-1. Prioritas utama dari pola error model:
-   - M sering berasal dari N (atau A/S saat kamera gerak)
-   - S sering berasal dari M atau A (atau E)
-   - W sering berasal dari Y, T, atau V
-   - I sering berasal dari Y
-   - U sering berasal dari V
-   - R sering berasal dari U
-   - X atau D sering berasal dari T
-2. Kemiripan visual kamera live:
-   - Kepalan tangan: A <-> S <-> E <-> M <-> N <-> T
-   - Dua jari: U <-> V <-> R <-> K
-   - Tiga/empat jari: B <-> W <-> F
-   - Melengkung: C <-> O
-   - Samping/bawah: G <-> H, P <-> Q
+- M <-> N <-> E <-> S <-> A <-> T (kepalan tangan tertutup; contoh: E sering berasal dari M, S sering berasal dari A atau M)
+- U <-> V <-> R <-> K
+- Y -> W atau I (Y TIDAK PERNAH menjadi B atau huruf lain)
+- T -> X, D, atau W
+- B <-> W <-> F
+- C <-> O
+- G <-> H
+- P <-> Q
 
-BATASAN KETAT (GUARDRAIL ANTI HALUSINASI):
-- Jika kata input sudah merupakan kata valid yang umum (Indonesia/Inggris), kembalikan status "already_valid" dan suggestions [].
-- Hanya lakukan koreksi jika kata input bisa berubah menjadi kata valid dengan maksimal 2 substitusi huruf (atau maksimal 40% panjang kata) yang HANYA berasal dari Confusion Map di atas.
-- Jika kata terlalu acak atau tidak mirip kata valid mana pun setelah mengikuti Confusion Map (misal "XQZPM"), WAJIB kembalikan status "no_match" dan suggestions [].
-- Berikan maksimal 3 saran kata terbaik (huruf kapital semua, tanpa spasi).
+ATURAN KERAS (GUARDRAIL):
+1. DILARANG mengubah huruf ke huruf lain di luar Confusion Map di atas.
+2. Setiap kata hasil pemisahan dan koreksi WAJIB berupa kata nyata yang baku di KBBI atau kamus Inggris (contoh: SAYAMAKANBAYAE -> SAYA MAKAN BAYAM).
+3. Batas koreksi: maksimal 1-2 huruf per kata (atau maksimal 30% dari total panjang input) yang boleh diganti sesuai Confusion Map.
+4. Jika input adalah 1 kata tunggal yang sudah valid tanpa perlu spasi maupun koreksi (misal "BAYAM" atau "BALI"), kembalikan status "already_valid" dan suggestions [].
+5. Jika input berupa gabungan kata yang hanya butuh dipisah spasi atau dikoreksi hurufnya, kembalikan status "corrected" dengan maksimal 3 saran terbaik (huruf kapital semua, dipisah spasi).
+6. Jika deretan huruf terlalu acak dan tidak bisa membentuk kata/kalimat yang masuk akal setelah mengikuti Confusion Map (misal "XQZPMK"), WAJIB kembalikan status "no_match" dan suggestions [].
 ''';
 
   Future<AutocorrectResult> correctWord(String rawSequence) async {
@@ -152,7 +152,13 @@ BATASAN KETAT (GUARDRAIL ANTI HALUSINASI):
       final resultMap = jsonDecode(jsonText) as Map<String, dynamic>;
       final rawStatus = resultMap['status'] as String? ?? 'no_match';
       final rawSuggestions = (resultMap['suggestions'] as List<dynamic>? ?? [])
-          .map((e) => e.toString().trim().toUpperCase())
+          .map(
+            (e) => e
+                .toString()
+                .trim()
+                .replaceAll(RegExp(r'\s+'), ' ')
+                .toUpperCase(),
+          )
           .where((e) => e.isNotEmpty && e != normalized)
           .toSet()
           .take(3)
