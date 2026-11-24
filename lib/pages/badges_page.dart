@@ -35,10 +35,13 @@ class BadgesPage extends ConsumerWidget {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: Navigator.canPop(context)
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: _ink),
-                tooltip: 'Kembali',
-                onPressed: () => Navigator.pop(context),
+            ? Container(
+                margin: const EdgeInsets.only(left: 12),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded, color: _ink),
+                  tooltip: 'Kembali',
+                  onPressed: () => Navigator.pop(context),
+                ),
               )
             : null,
         title: const Text(
@@ -113,7 +116,7 @@ class BadgesPage extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(10),
                     child: LinearProgressIndicator(
                       value: progressRatio,
-                      minHeight: 7,
+                      minHeight: 6,
                       backgroundColor: const Color(0xFFDCE6F5),
                       valueColor:
                           const AlwaysStoppedAnimation<Color>(_blue),
@@ -166,8 +169,8 @@ class BadgesPage extends ConsumerWidget {
                   const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.favorite_rounded,
-                          color: Color(0xFF3475FF), size: 16),
+                      Icon(Icons.favorite_outline_rounded,
+                          color: Color(0xFF2864F0), size: 16),
                       SizedBox(width: 6),
                       Text(
                         'No rush. Every little practice counts.',
@@ -193,34 +196,33 @@ class BadgesPage extends ConsumerWidget {
               ),
               child: SizedBox(
                 width: double.infinity,
+                height: 52,
                 child: FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: _blue,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(17),
                     ),
                   ),
                   onPressed: () {
-                    if (onContinueLearning != null) {
-                      onContinueLearning!();
-                    } else if (Navigator.canPop(context)) {
+                    if (Navigator.canPop(context)) {
                       Navigator.pop(context);
                     }
+                    onContinueLearning?.call();
                   },
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Keep learning',
-                        style: TextStyle(
+                        'Keep learning · Letters ${progress.nextLessonRange}',
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded, size: 18),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward_rounded, size: 18),
                     ],
                   ),
                 ),
@@ -250,7 +252,7 @@ class _BadgeListCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // If it's unlocked and new, give it a soft lavender accent border/bg
+    // If it's unlocked and new (e.g. Excellent in the screenshot), give it soft lavender background
     final highlight = isUnlocked && isNew;
 
     return Material(

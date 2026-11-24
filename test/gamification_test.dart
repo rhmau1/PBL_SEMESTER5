@@ -220,7 +220,7 @@ void main() {
       // Alphabet pills
       expect(find.text('A'), findsWidgets);
       expect(find.text('B'), findsWidgets);
-      expect(find.text('Z'), findsOneWidget);
+      expect(find.text('Y'), findsOneWidget);
 
       // Streak card
       expect(find.textContaining('streak'), findsWidgets);

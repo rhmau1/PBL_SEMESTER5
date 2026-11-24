@@ -70,8 +70,7 @@ class BadgeItem {
       id: 'keep_learning',
       title: 'Keep learning',
       requirement: 'Complete your first lesson.',
-      description:
-          'Awal yang bagus! Kamu telah menyelesaikan sesi latihan pertamamu.',
+      description: 'Complete your first lesson.',
       assetPath: 'assets/badges/keep_learning.svg',
     ),
     BadgeItem(
@@ -80,7 +79,7 @@ class BadgeItem {
       title: 'Good',
       requirement: 'Learn 5 alphabet letters.',
       description:
-          'Hebat! Kamu sudah mencoba 5 huruf alfabet berbeda.',
+          'You’ve learned 5 alphabet letters. That’s 5 steps closer to fluent communication.',
       assetPath: 'assets/badges/good.svg',
       targetLetters: 5,
     ),
@@ -90,7 +89,7 @@ class BadgeItem {
       title: 'Excellent',
       requirement: 'Learn 15 alphabet letters.',
       description:
-          'Luar biasa! Kamu telah mempelajari 15 huruf alfabet. Itu 15 cara baru untuk terkoneksi.',
+          'You’ve learned 15 alphabet letters. That’s 15 new ways to connect.',
       assetPath: 'assets/badges/excellent.svg',
       targetLetters: 15,
     ),
@@ -100,7 +99,7 @@ class BadgeItem {
       title: 'Perfect',
       requirement: 'Learn all 24 alphabet letters.',
       description:
-          'Sempurna! Kamu telah melatih seluruh 24 huruf yang tersedia pada sistem.',
+          'You’ve learned all 24 alphabet letters. Pure dedication and mastery.',
       assetPath: 'assets/badges/perfect.svg',
       targetLetters: 24,
     ),
@@ -110,7 +109,7 @@ class BadgeItem {
       title: 'Impossible',
       requirement: 'Learn all 24 letters + reach a 7-day streak.',
       description:
-          'Pencapaian legendaris! Kamu menguasai seluruh huruf dan konsisten berlatih selama 7 hari.',
+          'You’ve mastered all 24 letters and maintained a 7-day streak. Truly legendary!',
       assetPath: 'assets/badges/impossible.svg',
       targetLetters: 24,
       targetStreak: 7,

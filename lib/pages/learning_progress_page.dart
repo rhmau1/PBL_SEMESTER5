@@ -18,10 +18,11 @@ class LearningProgressPage extends ConsumerWidget {
   static const _paleBlue = Color(0xFFEAF0FF);
   static const _border = Color(0xFFE8EDF5);
 
-  static const _alphabet = [
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-    'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-    'U', 'V', 'W', 'X', 'Y', 'Z',
+  static const _row1Letters = [
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M'
+  ];
+  static const _row2Letters = [
+    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y'
   ];
 
   @override
@@ -31,7 +32,7 @@ class LearningProgressPage extends ConsumerWidget {
     final seenBadges = ref.watch(seenBadgesProvider);
 
     final learnedCount = progress.practicedLetters.length;
-    final totalLetters = 24; // Model supports 24 static letters
+    final totalLetters = progress.totalLetters; // 24 letters (no J and Z)
     final percent = progress.percentageLetters;
     final progressRatio = (learnedCount / totalLetters).clamp(0.0, 1.0);
 
@@ -42,10 +43,13 @@ class LearningProgressPage extends ConsumerWidget {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         leading: Navigator.canPop(context)
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: _ink),
-                tooltip: 'Kembali',
-                onPressed: () => Navigator.pop(context),
+            ? Container(
+                margin: const EdgeInsets.only(left: 12),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded, color: _ink),
+                  tooltip: 'Kembali',
+                  onPressed: () => Navigator.pop(context),
+                ),
               )
             : null,
         title: const Text(
@@ -131,57 +135,43 @@ class LearningProgressPage extends ConsumerWidget {
                           borderRadius: BorderRadius.circular(8),
                           child: LinearProgressIndicator(
                             value: progressRatio,
-                            minHeight: 7,
+                            minHeight: 6,
                             backgroundColor: const Color(0xFFDCE6F5),
                             valueColor:
                                 const AlwaysStoppedAnimation<Color>(_blue),
                           ),
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 16),
 
-                        // Alphabet Grid
-                        Wrap(
-                          spacing: 7,
-                          runSpacing: 7,
-                          children: _alphabet.map((letter) {
+                        // Alphabet Grid: 2 clean rows of 13 letters
+                        Row(
+                          children: _row1Letters.map((letter) {
                             final isPracticed =
                                 progress.isLetterPracticed(letter);
-                            final isDynamic =
-                                letter == 'J' || letter == 'Z';
-
-                            return Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: isPracticed
-                                    ? _blue
-                                    : (isDynamic
-                                        ? const Color(0xFFFFF8E9)
-                                        : const Color(0xFFF6F8FC)),
-                                borderRadius: BorderRadius.circular(11),
-                                border: Border.all(
-                                  color: isPracticed
-                                      ? _blue
-                                      : (isDynamic
-                                          ? const Color(0xFFFFDF83)
-                                          : const Color(0xFFE2E8F0)),
-                                  width: 1,
+                            return Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 1.5),
+                                child: _AlphabetChip(
+                                  letter: letter,
+                                  isPracticed: isPracticed,
                                 ),
                               ),
-                              child: Center(
-                                child: Text(
-                                  letter,
-                                  style: TextStyle(
-                                    color: isPracticed
-                                        ? Colors.white
-                                        : (isDynamic
-                                            ? const Color(0xFF9A4D12)
-                                            : const Color(0xFF64748B)),
-                                    fontSize: 14,
-                                    fontWeight: isPracticed
-                                        ? FontWeight.w800
-                                        : FontWeight.w600,
-                                  ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 5),
+                        Row(
+                          children: _row2Letters.map((letter) {
+                            final isPracticed =
+                                progress.isLetterPracticed(letter);
+                            return Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 1.5),
+                                child: _AlphabetChip(
+                                  letter: letter,
+                                  isPracticed: isPracticed,
                                 ),
                               ),
                             );
@@ -189,25 +179,24 @@ class LearningProgressPage extends ConsumerWidget {
                         ),
                         const SizedBox(height: 14),
 
+                        // Subtitle row: learned range and next lesson
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              learnedCount > 0
-                                  ? '$learnedCount huruf sudah dicoba'
-                                  : 'Mulai latihan huruf pertamamu',
+                              progress.learnedSummaryText,
                               style: const TextStyle(
                                 color: _blue,
-                                fontSize: 12,
+                                fontSize: 12.5,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            const Text(
-                              'Target: 24 huruf',
-                              style: TextStyle(
+                            Text(
+                              'Next: ${progress.nextLessonRange}',
+                              style: const TextStyle(
                                 color: _muted,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
@@ -240,7 +229,11 @@ class LearningProgressPage extends ConsumerWidget {
                           children: [
                             Row(
                               children: [
-                                const Text('🔥', style: TextStyle(fontSize: 18)),
+                                const Icon(
+                                  Icons.local_fire_department_rounded,
+                                  color: _blue,
+                                  size: 22,
+                                ),
                                 const SizedBox(width: 6),
                                 Text(
                                   '${progress.streakDays}-day streak',
@@ -262,64 +255,78 @@ class LearningProgressPage extends ConsumerWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 16),
 
-                        // Streak Day Dots (7 days)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(7, (index) {
-                            final dayNames = [
-                              'S', 'S', 'R', 'K', 'J', 'S', 'M'
+                        // Streak Day Circles (Senin - Minggu: M, T, W, T, F, S, S)
+                        Builder(
+                          builder: (context) {
+                            const dayNames = [
+                              'M',
+                              'T',
+                              'W',
+                              'T',
+                              'F',
+                              'S',
+                              'S'
                             ];
-                            final isPassed = index < progress.streakDays;
+                            final currentWeekday = DateTime.now().weekday; // 1 (Mon) .. 7 (Sun)
 
-                            return Column(
-                              children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: isPassed
-                                        ? _blue
-                                        : const Color(0xFFF1F5F9),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: isPassed
-                                          ? _blue
-                                          : const Color(0xFFE2E8F0),
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: List.generate(7, (index) {
+                                final weekday = index + 1;
+                                final isPassed = weekday <= currentWeekday &&
+                                    (currentWeekday - weekday) < progress.streakDays;
+
+                                return Column(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: isPassed
+                                            ? _blue
+                                            : const Color(0xFFF1F5F9),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: isPassed
+                                              ? _blue
+                                              : const Color(0xFFE2E8F0),
+                                        ),
+                                      ),
+                                      child: Center(
+                                        child: isPassed
+                                            ? const Icon(Icons.check_rounded,
+                                                size: 18, color: Colors.white)
+                                            : const Text('·',
+                                                style: TextStyle(
+                                                    fontSize: 22,
+                                                    color: Color(0xFF94A3B8))),
+                                      ),
                                     ),
-                                  ),
-                                  child: Center(
-                                    child: isPassed
-                                        ? const Icon(Icons.check_rounded,
-                                            size: 18, color: Colors.white)
-                                        : const Text('·',
-                                            style: TextStyle(
-                                                fontSize: 22,
-                                                color: Color(0xFF94A3B8))),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  dayNames[index],
-                                  style: TextStyle(
-                                    color: isPassed ? _ink : _muted,
-                                    fontSize: 11,
-                                    fontWeight: isPassed
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      dayNames[index],
+                                      style: TextStyle(
+                                        color: isPassed ? _ink : _muted,
+                                        fontSize: 11,
+                                        fontWeight: isPassed
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }),
                             );
-                          }),
+                          },
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
 
                         Text(
                           progress.streakDays > 0
-                              ? 'Kamu aktif berlatih! Pertahankan streak latihanmu besok!'
-                              : 'Lakukan latihan hari ini untuk memulai streak pertamamu.',
+                              ? 'You practiced today. Keep your streak going tomorrow!'
+                              : 'Start practicing today to build your streak!',
                           style: const TextStyle(
                             color: _muted,
                             fontSize: 12.5,
@@ -372,9 +379,10 @@ class LearningProgressPage extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  // Horizontal Badges Row (berjejer horizontal ke samping)
+
+                  // Horizontal Badges Row
                   SizedBox(
-                    height: 160,
+                    height: 154,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: BadgeItem.allBadges.length,
@@ -400,21 +408,26 @@ class LearningProgressPage extends ConsumerWidget {
                             },
                             borderRadius: BorderRadius.circular(22),
                             child: Container(
-                              width: 126,
+                              width: 120,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
-                                vertical: 10,
+                                vertical: 12,
                               ),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(22),
-                                border: Border.all(color: _border),
+                                border: Border.all(
+                                  color: isNew
+                                      ? const Color(0xFFDECFF2)
+                                      : _border,
+                                  width: isNew ? 1.5 : 1.0,
+                                ),
                               ),
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   BadgeSvgIcon(
                                     badge: badge,
-                                    size: 48,
+                                    size: 50,
                                     isUnlocked: isUnlocked,
                                   ),
                                   const SizedBox(height: 8),
@@ -475,7 +488,7 @@ class LearningProgressPage extends ConsumerWidget {
                       ),
                       child: const Center(
                         child: Text(
-                          'Belum ada sesi deteksi. Mulai latihan sekarang!',
+                          'Belum ada sesi latihan. Mulai sekarang untuk meraih XP!',
                           style: TextStyle(color: _muted, fontSize: 13),
                         ),
                       ),
@@ -508,7 +521,7 @@ class LearningProgressPage extends ConsumerWidget {
                             const SizedBox(width: 14),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     'Letters ${item.gesture}',
@@ -562,40 +575,78 @@ class LearningProgressPage extends ConsumerWidget {
               ),
               child: SizedBox(
                 width: double.infinity,
+                height: 52,
                 child: FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: _blue,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(17),
                     ),
                   ),
                   onPressed: () {
-                    if (onContinueLearning != null) {
-                      onContinueLearning!();
-                    } else if (Navigator.canPop(context)) {
+                    if (Navigator.canPop(context)) {
                       Navigator.pop(context);
                     }
+                    onContinueLearning?.call();
                   },
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Continue learning',
-                        style: TextStyle(
+                        'Continue with letters ${progress.nextLessonRange}',
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded, size: 18),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward_rounded, size: 18),
                     ],
                   ),
                 ),
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AlphabetChip extends StatelessWidget {
+  const _AlphabetChip({
+    required this.letter,
+    required this.isPracticed,
+  });
+
+  final String letter;
+  final bool isPracticed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 32,
+      decoration: BoxDecoration(
+        color: isPracticed
+            ? const Color(0xFF2864F0)
+            : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isPracticed
+              ? const Color(0xFF2864F0)
+              : const Color(0xFFE2E8F0),
+          width: 1,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          letter,
+          style: TextStyle(
+            color: isPracticed ? Colors.white : const Color(0xFF94A3B8),
+            fontSize: 12.5,
+            fontWeight: isPracticed ? FontWeight.w800 : FontWeight.w600,
+          ),
         ),
       ),
     );

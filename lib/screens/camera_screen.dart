@@ -15,6 +15,8 @@ import '../services/sign_classifier.dart';
 import '../services/stable_sign.dart';
 import '../widgets/full_bleed_camera_preview.dart';
 import '../services/llm_autocorrect_service.dart';
+import '../pages/learning_progress_page.dart';
+import '../widgets/session_complete_sheet.dart';
 
 const _modelSelectionBlue = Color(0xFF2864F0);
 
@@ -848,246 +850,42 @@ class _CameraScreenState extends State<CameraScreen>
         ? LlmAutocorrectService.instance.correctWord(sequence)
         : null;
 
-    var activeSequence = sequence;
-
     return showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFFF4F7FC),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 8, 22, 30),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(18, 22, 18, 20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(26),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x140E2343),
-                          blurRadius: 22,
-                          offset: Offset(0, 9),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 58,
-                          height: 58,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFE3F8EF),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.task_alt_rounded,
-                            size: 32,
-                            color: Color(0xFF10AD7E),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          target.isEmpty
-                              ? 'Hasil sesi'
-                              : 'Hasil uji target $target',
-                          style: const TextStyle(
-                            color: Color(0xFF172642),
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 18,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEAF0FF),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            activeSequence.isEmpty
-                                ? 'Belum ada huruf yang stabil.'
-                                : activeSequence,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: activeSequence.isEmpty
-                                  ? const Color(0xFF7585A2)
-                                  : const Color(0xFF2864F0),
-                              fontSize: activeSequence.isEmpty ? 15 : 34,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: activeSequence.isEmpty ? 0 : 6,
-                            ),
-                          ),
-                        ),
-                        if (autocorrectFuture != null)
-                          FutureBuilder<AutocorrectResult>(
-                            future: autocorrectFuture,
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Padding(
-                                  padding: EdgeInsets.only(top: 12),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Color(0xFF2864F0),
-                                        ),
-                                      ),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        'Memeriksa saran kata...',
-                                        style: TextStyle(
-                                          color: Color(0xFF7585A2),
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }
-
-                              final result = snapshot.data;
-                              if (result == null || !result.hasSuggestions) {
-                                return const SizedBox.shrink();
-                              }
-
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 14),
-                                child: Column(
-                                  children: [
-                                    const Text(
-                                      'Mungkin maksudmu (tap untuk ubah):',
-                                      style: TextStyle(
-                                        color: Color(0xFF7585A2),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      alignment: WrapAlignment.center,
-                                      children: [
-                                        for (final word in result.suggestions)
-                                          ChoiceChip(
-                                            label: Text(word),
-                                            selected: activeSequence == word,
-                                            selectedColor: const Color(
-                                              0xFF2864F0,
-                                            ),
-                                            backgroundColor: const Color(
-                                              0xFFEAF0FF,
-                                            ),
-                                            labelStyle: TextStyle(
-                                              color: activeSequence == word
-                                                  ? Colors.white
-                                                  : const Color(0xFF2864F0),
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                            onSelected: (_) {
-                                              setSheetState(() {
-                                                activeSequence =
-                                                    activeSequence == word
-                                                    ? sequence
-                                                    : word;
-                                              });
-                                            },
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        if (displayedPredictions.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          Text(
-                            target.isEmpty
-                                ? '${displayedPredictions.length} huruf dikenali tanpa spasi'
-                                : '${displayedPredictions.length} percobaan stabil direkam',
-                            style: const TextStyle(
-                              color: Color(0xFF7585A2),
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            alignment: WrapAlignment.center,
-                            children: displayedPredictions
-                                .map(
-                                  (letter) => Chip(
-                                    backgroundColor: const Color(0xFFEAF0FF),
-                                    label: Text(
-                                      letter,
-                                      style: const TextStyle(
-                                        color: Color(0xFF2864F0),
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                        ],
-                        if (target.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE3F8EF),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              validationTotal == 0
-                                  ? 'Validasi target $target: belum ada prediksi stabil.'
-                                  : 'Validasi target $target: $validationCorrect/$validationTotal benar (${validationAccuracy.toStringAsFixed(1)}%).',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFF087D5B),
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    _savedVideoPath == null
-                        ? 'Video tidak berhasil disimpan.'
-                        : 'Video tersimpan di:\n$_savedVideoPath',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xFF7585A2),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) => SessionCompleteSheet(
+        displayedPredictions: displayedPredictions,
+        target: target,
+        validationCorrect: validationCorrect,
+        validationTotal: validationTotal,
+        validationAccuracy: validationAccuracy,
+        savedVideoPath: _savedVideoPath,
+        autocorrectFuture: autocorrectFuture,
+        onContinue: () {
+          if (mounted) {
+            _resetRecognitionState();
+          }
+        },
+        onViewProgress: () {
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => LearningProgressPage(
+                  onContinueLearning: () {
+                    if (Navigator.canPop(context)) {
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
               ),
-            ),
-          ),
-        ),
+            );
+          }
+        },
       ),
     );
   }
