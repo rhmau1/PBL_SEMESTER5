@@ -892,14 +892,14 @@ class _UploadActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 50,
+      height: 52,
       child: FilledButton.icon(
         onPressed: onTap,
         style: FilledButton.styleFrom(
           backgroundColor: const Color(0xFF2864F0),
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(17),
           ),
         ),
         icon: Icon(

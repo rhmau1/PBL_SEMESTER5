@@ -1489,7 +1489,7 @@ class _CameraScreenState extends State<CameraScreen>
                             reliable ? prediction.label : 'Belum yakin',
                             style: TextStyle(
                               color: reliable
-                                  ? colors.primary
+                                  ? const Color(0xFF2864F0)
                                   : const Color(0xFFAE7010),
                               fontSize: reliable ? 48 : 24,
                               fontWeight: FontWeight.w900,
@@ -1528,7 +1528,7 @@ class _CameraScreenState extends State<CameraScreen>
                   SizedBox(
                     key: const ValueKey('photo-primary-action'),
                     width: double.infinity,
-                    height: 58,
+                    height: 52,
                     child: FilledButton.icon(
                       onPressed: !busy
                           ? _cameraError != null
@@ -1538,7 +1538,7 @@ class _CameraScreenState extends State<CameraScreen>
                                 : null
                           : null,
                       style: FilledButton.styleFrom(
-                        backgroundColor: colors.primary,
+                        backgroundColor: const Color(0xFF2864F0),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(17),
@@ -1561,9 +1561,9 @@ class _CameraScreenState extends State<CameraScreen>
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: colors.primary,
-                            side: BorderSide(color: colors.outlineVariant),
-                            minimumSize: const Size(0, 58),
+                            foregroundColor: const Color(0xFF2864F0),
+                            side: const BorderSide(color: Color(0xFF2864F0)),
+                            minimumSize: const Size(0, 52),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(17),
                             ),
@@ -1581,7 +1581,7 @@ class _CameraScreenState extends State<CameraScreen>
                             style: FilledButton.styleFrom(
                               backgroundColor: const Color(0xFF2864F0),
                               foregroundColor: Colors.white,
-                              minimumSize: const Size(0, 58),
+                              minimumSize: const Size(0, 52),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(17),
                               ),
