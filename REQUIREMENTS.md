@@ -1,190 +1,159 @@
-# Kebutuhan tim dan cara menjalankan
+# Panduan Kebutuhan Sistem & Menjalankan Aplikasi
 
-Pasang Flutter SDK, JDK, dan Android SDK di komputer masing-masing, di luar
-folder project. Tidak perlu menyimpan SDK, cache dependency, atau APK di Git.
+Dokumen ini adalah panduan standarisasi lingkungan pengembangan (*developer environment*) bagi seluruh anggota tim untuk memastikan proses *build*, pengujian (*testing*), dan *running* berjalan konsisten di komputer masing-masing.
 
-## Lingkungan project
+---
 
-| Komponen | Versi |
-| --- | --- |
-| Flutter | 3.47.5 stable |
-| Dart | 3.13.4, termasuk Flutter |
-| JDK | 17 LTS; build Android memerlukan JDK 17 |
-| Android SDK | Platform API 36 dan Build Tools 36.0.0 |
-| Android NDK | 28.2.13676358, mengikuti Flutter |
-| Gradle | 9.3.1 |
-| Android Gradle Plugin | 9.1.0 |
-| Kotlin plugin | 2.4.0 |
-| Minimum HP | Android 7.0 / API 24 |
+## 1. Spesifikasi Lingkungan Pengembangan
 
-Gunakan versi Flutter yang sama untuk hasil build yang konsisten. Workflow CI
-di `.github/workflows/ci.yml` memakai Flutter 3.47.5. Project ditujukan untuk
-Android. Branch RAMA-SVM-HOG menyediakan backend inferensi Dart dan aset model
-untuk disambungkan oleh tim frontend.
+Pastikan setiap anggota tim menggunakan versi *toolchain* yang seragam berikut:
 
-## Instalasi
+| Komponen | Versi Terkunci | Keterangan |
+| :--- | :--- | :--- |
+| **Flutter SDK** | `3.47.5 stable` | Framework utama UI & logika aplikasi |
+| **Dart SDK** | `3.13.4+` | Bahasa pemrograman (termasuk di dalam Flutter) |
+| **Java Development Kit (JDK)** | `JDK 17 LTS` | **Wajib JDK 17** untuk kompatibilitas Gradle & Android build |
+| **Android SDK Platform** | `API 36` (Android 15) | Target SDK Android |
+| **Android Build Tools** | `36.0.0` | Tool kompilasi Android |
+| **Android NDK** | `28.2.13676358` | Kompilasi library native (MediaPipe / C++) |
+| **Gradle** | `9.3.1` | Build automation tool (dikelola via Gradle Wrapper) |
+| **Android Gradle Plugin (AGP)** | `9.1.0` | Plugin Gradle untuk Android |
+| **Kotlin Plugin** | `2.4.0` | Native Android Kotlin runtime |
+| **Perangkat Uji Minimum** | `Android 7.0 (API 24)` | Dukungan minimum OS ponsel pintar pengguna |
 
-1. Instal Git dan Flutter 3.47.5. Pastikan `flutter` tersedia di `PATH`:
+---
 
+## 2. Instalasi & Konfigurasi Komputer
+
+### A. Untuk Pengguna Linux / macOS
+1. **Verifikasi Flutter & Dart**:
    ```bash
    flutter --version
    ```
-
-2. Instal JDK 17, lalu arahkan Flutter ke JDK tersebut. Sesuaikan path dengan
-   lokasi JDK di komputer:
-
+2. **Arahkan Flutter ke JDK 17**:
    ```bash
+   export JAVA_HOME=/path/ke/jdk-17
    flutter config --jdk-dir="$JAVA_HOME"
    ```
-
-3. Instal Android Studio, lalu buka SDK Manager. Pasang Android SDK Platform
-   36, Build Tools 36.0.0, Platform-Tools, Command-line Tools, dan NDK versi
-   yang tercantum di atas. Gradle dan library Android diunduh ketika build.
-
-4. Terima lisensi dan periksa lingkungan:
-
+3. **Konfirmasi Lisensi Android**:
    ```bash
    flutter doctor --android-licenses
-   flutter --version
    flutter doctor -v
    ```
+   *Pastikan pada bagian "Android toolchain", baris `Java binary at:` menunjuk ke direktori JDK 17.*
 
-`Java binary` pada Android toolchain harus menunjuk ke JDK 17. JDK lain boleh
-tetap terpasang untuk project lain; jangan gunakan untuk build project ini.
-Jika memakai VS Code, instal extension Flutter dan Dart.
-
-## Mengambil project dan dependency
-
-Untuk komputer anggota tim yang belum memiliki repository:
-
-```bash
-git clone --branch RAMA-SVM-HOG https://github.com/rhmau1/PBL_SEMESTER5.git \
-  ~/Documents/rhma2026/PBL_SEMESTER5
-cd ~/Documents/rhma2026/PBL_SEMESTER5
-flutter pub get
-```
-
-Untuk repository yang sudah ada, ambil perubahan tim melalui Git lalu
-jalankan `flutter pub get` dari root repository. Simpan `pubspec.lock` dalam
-Git dan jangan menjalankan `flutter pub upgrade` tanpa menyamakan versi
-bersama tim.
-
-Versi berikut berasal dari `pubspec.lock` hasil merge:
-
-| Dependency | Versi terkunci | Fungsi |
-| --- | --- | --- |
-| camera | 0.12.1 | Preview, stream frame, foto |
-| camera_android_camerax | 0.7.4+7 | Backend Android; dikunci untuk bridge preview |
-| camera_platform_interface | 2.14.0 | Antarmuka backend kamera |
-| AndroidX camera-core | 1.6.1 | Transformasi native preview; dikelola Gradle |
-| image | 4.9.2 | EXIF, crop, resize, grayscale |
-| image_picker | 1.2.4 | Memilih gambar dari galeri |
-| path_provider | 2.1.6 | Direktori penyimpanan internal |
-| sqflite | 2.4.4+1 | Riwayat SQLite |
-| path | 1.9.1 | Menggabungkan path file |
-| flutter_riverpod | 2.6.1 | State aplikasi dan riwayat |
-
-Package tidak perlu diinstal satu per satu. `flutter pub get` memasang
-dependency Flutter. Aset inferensi SVM-HOG sudah tersedia di repo.
-
-## USB dan menjalankan di HP
-
-Aktifkan Developer options dan USB debugging pada HP, sambungkan dengan kabel
-data, lalu izinkan dialog RSA komputer. Periksa perangkat:
-
-```bash
-cd ~/Documents/rhma2026/PBL_SEMESTER5
-flutter devices
-flutter run
-```
-
-Jika beberapa perangkat terhubung, gunakan ID dari `flutter devices`:
-
-```bash
-flutter run -d ID_PERANGKAT
-```
-
-Contoh Vivo pengembangan: `flutter run -d 33a40574`. ID tersebut hanya milik
-HP itu; anggota tim menggunakan ID HP masing-masing. Status `unauthorized`
-berarti dialog izin USB pada HP belum disetujui.
-
-Build pertama memerlukan unduhan dan kompilasi library native. Jangan cabut
-USB sebelum instalasi selesai. Saat proses run aktif, `r` melakukan hot reload,
-`R` hot restart, dan `q` menghentikan proses. Perubahan Android, dependency,
-atau asset model membutuhkan stop lalu run kembali.
-
-## Pemeriksaan dan APK manual
-
-```bash
-flutter analyze
-flutter test
-```
-
-`flutter test` hanya menjalankan berkas di `test/`. Folder `integration_test/`
-memerlukan HP Android yang terhubung:
-
-```bash
-flutter test integration_test -d ID_PERANGKAT
-```
-
-Untuk membuat APK setelah siap menguji:
-
-```bash
-flutter build apk --debug
-```
-
-Hasil: `build/app/outputs/flutter-apk/app-debug.apk`. APK dapat diinstal dan
-dibuka di Android tanpa USB setelah instalasi. Untuk release per arsitektur:
-
-```bash
-flutter build apk --release --split-per-abi
-```
-
-HP arm64 memakai `app-arm64-v8a-release.apk`. Signing release saat ini masih
-debug key; siapkan signing produksi sebelum distribusi resmi.
-
-## Masalah umum
-
-- Kode merah: jalankan `flutter pub get`, lalu restart Dart Analysis Server
-  atau muat ulang editor. Buka folder `~/Documents/rhma2026/PBL_SEMESTER5`
-  sebagai project Flutter.
-- HP tidak terlihat: periksa kabel data, izin RSA, USB debugging, dan driver.
-  Jalankan `adb devices` untuk membedakan `unauthorized` dan perangkat offline.
-- Error JVM: periksa JDK melalui `flutter doctor -v`; samakan ke 17.
-- Warning SDK XML: versi tool Android pembaca metadata tertinggal. Samakan
-  instalasi Android Studio/Command-line Tools; warning ini tidak menjelaskan
-  rotasi atau rasio preview kamera.
-- Kamera tertukar setelah update: hentikan aplikasi dan jalankan ulang dari
-  source terbaru. Hot reload tidak mengganti native preview bridge. Catat
-  model HP dan tahap terjadinya masalah untuk validasi.
-
-Jangan mengirim `build`, `.dart_tool`, `android/local.properties`, SDK, atau
-JDK ke Git. Pertahankan aset SVM-HOG, label, metadata, foto kamus,
-source native bridge, dan `pubspec.lock` agar tim dapat menjalankan aplikasi.
-
-## Lampiran opsional: Windows
-
-Bagian ini hanya untuk anggota tim yang memakai Windows. Perintah utama di
-atas tetap menjadi acuan.
-
-1. Instal Flutter dan JDK 17, misalnya:
-
+### B. Untuk Pengguna Windows
+1. Pasang OpenJDK 17 (misal via winget):
    ```powershell
    winget install --id Microsoft.OpenJDK.17 -e
    ```
-
-2. Arahkan Flutter ke JDK 17:
-
+2. Arahkan Flutter ke direktori JDK 17:
    ```powershell
-   Get-ChildItem "C:\Program Files\Microsoft" -Directory | Where-Object Name -Like "jdk-17*"
    flutter config --jdk-dir="C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot"
    ```
-
-3. Clone repository dan jalankan dari PowerShell:
-
+3. Periksa status lingkungan:
    ```powershell
-   git clone https://github.com/rhmau1/PBL_SEMESTER5.git D:\PBL_SEMESTER5
-   cd D:\PBL_SEMESTER5
-   flutter pub get
-   flutter run
+   flutter doctor -v
    ```
+
+---
+
+## 3. Mengambil Project & Dependensi
+
+1. **Clone Repository**:
+   ```bash
+   git clone https://github.com/rhmau1/PBL_SEMESTER5.git
+   cd PBL_SEMESTER5
+   ```
+
+2. **Pasang Paket Dependensi**:
+   ```bash
+   flutter pub get
+   ```
+   > [!IMPORTANT]
+   > Simpan selalu berkas `pubspec.lock` di dalam Git dan jangan menjalankan `flutter pub upgrade` tanpa koordinasi bersama tim agar versi package antar komputer anggota tetap identik.
+
+### Daftar Dependensi Aktif & Fungsinya
+
+| Package | Versi Terkunci | Fungsi / Peruntukan |
+| :--- | :--- | :--- |
+| `camera` | `^0.12.1` | Kontroler kamera, capture foto, dan streaming frame luma |
+| `camera_android_camerax` | `0.7.4+7` | Backend CameraX Android untuk bridge preview |
+| `camera_platform_interface` | `^2.13.1` | Antarmuka abstraksi backend kamera |
+| `hand_landmarker` | `^3.1.0` | Deteksi real-time 21 landmark titik tangan MediaPipe |
+| `image` | `4.9.2` | Decode JPEG/PNG, koreksi rotasi EXIF, crop, dan grayscale |
+| `image_picker` | `^1.2.3` | Pemilih gambar galeri (single & multi-image) |
+| `path_provider` | `^2.1.6` | Akses direktori penyimpanan lokal perangkat |
+| `sqflite` | `^2.4.2` | Database lokal SQLite untuk riwayat deteksi latihan |
+| `path` | `^1.9.1` | Manipulasi dan penggabungan path file lokal |
+| `flutter_riverpod` | `^2.6.1` | Manajemen state terpusat (History & Gamifikasi) |
+| `flutter_svg` | `^2.3.2` | Rendering aset vektor SVG (lencana & maskot) |
+| `shared_preferences` | `^2.5.6` | Penyimpanan status lokal sederhana (flag Onboarding) |
+
+---
+
+## 4. Menjalankan Aplikasi di Perangkat Android
+
+1. Aktifkan **Developer Options** dan **USB Debugging** pada ponsel Android Anda.
+2. Sambungkan ponsel ke komputer dengan kabel data USB, lalu izinkan dialog otorisasi RSA yang muncul di layar ponsel.
+3. Periksa koneksi perangkat:
+   ```bash
+   flutter devices
+   ```
+4. Jalankan aplikasi dengan menyertakan API Key Gemini untuk mengaktifkan fitur autocorrect kalimat berbasis AI:
+   ```bash
+   flutter run --dart-define=GEMINI_API_KEY=API_KEY_GEMINI_ANDA
+   ```
+   *Jika terdapat lebih dari satu perangkat yang terhubung, gunakan flag `-d ID_DEVICE`:*
+   ```bash
+   flutter run -d <ID_DEVICE> --dart-define=GEMINI_API_KEY=API_KEY_GEMINI_ANDA
+   ```
+
+---
+
+## 5. Pengujian Kualitas Kode (Quality Assurance)
+
+Sebelum melakukan *commit* atau *push*, pastikan semua pengujian lolos:
+
+1. **Pemeriksaan Analisis Kode (Linter)**:
+   ```bash
+   flutter analyze
+   ```
+2. **Menjalankan Unit Test & Widget Test**:
+   ```bash
+   flutter test
+   ```
+3. **Menjalankan Pengujian Integrasi Fisik (E2E Integration Test)**:
+   *Memerlukan ponsel Android fisik yang tersambung melalui USB Debugging:*
+   ```bash
+   flutter test integration_test/ui_journey_physical_test.dart
+   ```
+
+---
+
+## 6. Build File APK
+
+1. **Build APK Debug**:
+   ```bash
+   flutter build apk --debug
+   ```
+   *Lokasi output:* `build/app/outputs/flutter-apk/app-debug.apk`
+
+2. **Build APK Release (Optimasi per Arsitektur CPU)**:
+   ```bash
+   flutter build apk --release --split-per-abi
+   ```
+   *Lokasi output untuk HP modern (64-bit):* `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`
+
+---
+
+## 7. Solusi Masalah Umum (Troubleshooting)
+
+* **IDE / Editor Menampilkan Teks Merah**:
+  Jalankan `flutter pub get`, lalu restart editor (atau *Restart Dart Analysis Server*).
+* **Perangkat Berstatus `unauthorized`**:
+  Cabut kabel data, pasang kembali, lalu klik **Izinkan / Allow** pada kotak dialog RSA di layar ponsel.
+* **Error Versi JVM / Gradle Build Gagal**:
+  Jalankan `flutter doctor -v` dan periksa path Java. Pastikan menggunakan JDK 17, bukan JDK 21 atau JDK 8.
+* **Kamera Terbalik atau Distorsi Preview**:
+  Native bridge memerlukan restart penuh jika kode Java/Kotlin diubah. Hentikan aplikasi secara total (`q`), lalu jalankan ulang dengan `flutter run`.
