@@ -186,7 +186,7 @@ class _HomeHeader extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Progres Belajar & Badges',
+            tooltip: 'Progres Belajar & Lencana',
             onPressed: onOpenProgress,
             icon: Container(
               padding: const EdgeInsets.all(8),
@@ -635,7 +635,7 @@ class _GamificationAction extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Progres Belajar & Badges',
+                      'Progres Belajar & Lencana',
                       style: TextStyle(
                         color: ink,
                         fontSize: 15,
@@ -644,7 +644,7 @@ class _GamificationAction extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Streak latihan, huruf dicoba, & 5 badges',
+                      'Streak latihan, huruf dicoba, & 5 lencana',
                       style: TextStyle(
                         color: muted,
                         fontSize: 12,

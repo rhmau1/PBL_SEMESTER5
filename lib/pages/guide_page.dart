@@ -143,33 +143,33 @@ class GuidePage extends StatelessWidget {
             ),
             const SizedBox(height: 14),
 
-            // Fitur 6: Gamifikasi & Badges
+            // Fitur 6: Gamifikasi & Lencana
             _FeatureCard(
               icon: Icons.military_tech_rounded,
               iconColor: const Color(0xFFE67E22),
               iconBgColor: const Color(0xFFFFF7E6),
-              title: 'Sistem Gamifikasi & Koleksi Badges',
-              description: 'Aplikasi mencatat secara lokal berapa kali Anda mencoba dan huruf apa saja yang telah dipelajari. Dapatkan badges prestasi sesuai tingkat penguasaan Anda:',
+              title: 'Sistem Gamifikasi & Koleksi Lencana',
+              description: 'Aplikasi mencatat secara lokal berapa kali Anda mencoba dan huruf apa saja yang telah dipelajari. Dapatkan lencana prestasi sesuai tingkat penguasaan Anda:',
               subItems: const [
                 _SubItemData(
-                  title: 'Keep learning',
+                  title: 'Terus Belajar',
                   description: 'Didapat setelah menyelesaikan sesi latihan/deteksi pertama kali.',
                 ),
                 _SubItemData(
-                  title: 'Good',
+                  title: 'Bagus',
                   description: 'Didapat saat sudah mencoba dan mempelajari minimal 5 huruf berbeda.',
                 ),
                 _SubItemData(
-                  title: 'Excellent',
+                  title: 'Luar Biasa',
                   description: 'Didapat saat sudah mencoba dan mempelajari minimal 15 huruf alfabet.',
                 ),
                 _SubItemData(
-                  title: 'Perfect',
+                  title: 'Sempurna',
                   description: 'Didapat saat sudah melatih seluruh 24 huruf alfabet yang didukung.',
                 ),
                 _SubItemData(
-                  title: 'Impossible (Tingkat Tertinggi)',
-                  description: 'Didapat jika berhasil menguasai seluruh huruf sekaligus mencapai 7-day streak latihan berturut-turut.',
+                  title: 'Mustahil (Tingkat Tertinggi)',
+                  description: 'Didapat jika berhasil menguasai seluruh huruf sekaligus mencapai streak 7 hari latihan berturut-turut.',
                   isHighlight: true,
                 ),
               ],

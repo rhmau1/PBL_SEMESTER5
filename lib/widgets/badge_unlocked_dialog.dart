@@ -97,9 +97,9 @@ class BadgeUnlockedDialog extends StatelessWidget {
                     child: Text(
                       isUnlocked
                           ? (isNewUnlock
-                              ? 'Your new achievement'
-                              : 'Your achievement')
-                          : 'Badge details',
+                              ? 'Pencapaian Baru Anda'
+                              : 'Detail Pencapaian')
+                          : 'Detail Lencana',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: _ink,
@@ -133,7 +133,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      isUnlocked ? 'BADGE UNLOCKED' : 'BADGE LOCKED',
+                      isUnlocked ? 'LENCANA TERBUKA' : 'LENCANA TERKUNCI',
                       style: TextStyle(
                         color: isUnlocked ? _blue : const Color(0xFF64748B),
                         fontSize: 11,
@@ -149,7 +149,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
               // Main Headline
               Text(
                 isUnlocked
-                    ? 'A little practice. A big achievement.'
+                    ? 'Latihan kecil. Pencapaian besar.'
                     : 'Tantangan Menanti!\nTerus Berlatih.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
@@ -297,7 +297,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          isUnlocked ? 'Earned today' : 'Locked',
+                          isUnlocked ? 'Diraih hari ini' : 'Terkunci',
                           style: TextStyle(
                             color: isUnlocked
                                 ? const Color(0xFF00A879)
@@ -312,7 +312,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
                   const SizedBox(width: 10),
                   Text(
                     isUnlocked
-                        ? '${progress.unlockedCount} of ${progress.totalBadgesCount} badges earned'
+                        ? '${progress.unlockedCount} dari ${progress.totalBadgesCount} lencana diraih'
                         : badge.progressText(progress),
                     style: const TextStyle(
                       color: _muted,
@@ -352,7 +352,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Next stop: ${next.title}',
+                              'Target berikutnya: ${next.title}',
                               style: const TextStyle(
                                 color: _ink,
                                 fontSize: 14,
@@ -361,7 +361,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Learn all 24 letters · ${24 - progress.practicedLetters.length} to go!',
+                              'Kuasai seluruh 24 huruf · sisa ${24 - progress.practicedLetters.length} huruf!',
                               style: const TextStyle(
                                 color: _muted,
                                 fontSize: 12,
@@ -400,7 +400,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Syarat Membuka Badge',
+                              'Syarat Membuka Lencana',
                               style: TextStyle(
                                 color: _ink,
                                 fontSize: 14,
@@ -443,7 +443,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Continue learning',
+                        'Lanjut latihan',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -483,7 +483,7 @@ class BadgeUnlockedDialog extends StatelessWidget {
                     }
                   },
                   child: const Text(
-                    'View my badges',
+                    'Lihat lencana saya',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,

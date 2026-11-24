@@ -53,7 +53,7 @@ class LearningProgressPage extends ConsumerWidget {
               )
             : null,
         title: const Text(
-          'My learning progress',
+          'Progres Belajar',
           style: TextStyle(
             color: _ink,
             fontSize: 20,
@@ -95,7 +95,7 @@ class LearningProgressPage extends ConsumerWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
-                              'Your alphabet journey',
+                              'Perjalanan Alfabetmu',
                               style: TextStyle(
                                 color: _ink,
                                 fontSize: 17,
@@ -122,7 +122,7 @@ class LearningProgressPage extends ConsumerWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '$learnedCount of $totalLetters letters learned',
+                          '$learnedCount dari $totalLetters huruf dipelajari',
                           style: const TextStyle(
                             color: _muted,
                             fontSize: 13,
@@ -192,7 +192,7 @@ class LearningProgressPage extends ConsumerWidget {
                               ),
                             ),
                             Text(
-                              'Next: ${progress.nextLessonRange}',
+                              'Berikutnya: ${progress.nextLessonRange}',
                               style: const TextStyle(
                                 color: _muted,
                                 fontSize: 12.5,
@@ -236,7 +236,7 @@ class LearningProgressPage extends ConsumerWidget {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  '${progress.streakDays}-day streak',
+                                  'Streak ${progress.streakDays} Hari',
                                   style: const TextStyle(
                                     color: _ink,
                                     fontSize: 17,
@@ -246,7 +246,7 @@ class LearningProgressPage extends ConsumerWidget {
                               ],
                             ),
                             Text(
-                              '${progress.totalXp} XP · ${progress.totalAttempts} sessions',
+                              '${progress.totalXp} XP · ${progress.totalAttempts} sesi',
                               style: const TextStyle(
                                 color: _muted,
                                 fontSize: 12,
@@ -325,8 +325,8 @@ class LearningProgressPage extends ConsumerWidget {
 
                         Text(
                           progress.streakDays > 0
-                              ? 'You practiced today. Keep your streak going tomorrow!'
-                              : 'Start practicing today to build your streak!',
+                              ? 'Kamu sudah latihan hari ini. Pertahankan streak besok!'
+                              : 'Mulai latihan hari ini untuk membangun streak!',
                           style: const TextStyle(
                             color: _muted,
                             fontSize: 12.5,
@@ -343,7 +343,7 @@ class LearningProgressPage extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
-                        'Your badges',
+                        'Lencana Pencapaian',
                         style: TextStyle(
                           color: _ink,
                           fontSize: 18,
@@ -367,7 +367,7 @@ class LearningProgressPage extends ConsumerWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 6, vertical: 4),
                           child: Text(
-                            'View all · ${progress.unlockedCount} / ${progress.totalBadgesCount}',
+                            'Lihat semua · ${progress.unlockedCount} / ${progress.totalBadgesCount}',
                             style: const TextStyle(
                               color: _blue,
                               fontSize: 13,
@@ -444,8 +444,8 @@ class LearningProgressPage extends ConsumerWidget {
                                   const SizedBox(height: 4),
                                   Text(
                                     isNew
-                                        ? 'Just unlocked!'
-                                        : (isUnlocked ? 'Earned' : 'Locked'),
+                                        ? 'Baru diraih!'
+                                        : (isUnlocked ? 'Diraih' : 'Terkunci'),
                                     style: TextStyle(
                                       color: isNew
                                           ? const Color(0xFF7D3EC0)
@@ -468,7 +468,7 @@ class LearningProgressPage extends ConsumerWidget {
 
                   // Section 4: Recent Sessions
                   const Text(
-                    'Recent sessions',
+                    'Sesi Terakhir',
                     style: TextStyle(
                       color: _ink,
                       fontSize: 18,
@@ -524,7 +524,7 @@ class LearningProgressPage extends ConsumerWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Letters ${item.gesture}',
+                                    'Huruf ${item.gesture}',
                                     style: const TextStyle(
                                       color: _ink,
                                       fontSize: 14,
@@ -594,7 +594,7 @@ class LearningProgressPage extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Continue with letters ${progress.nextLessonRange}',
+                        'Lanjut Latihan · Huruf ${progress.nextLessonRange}',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,

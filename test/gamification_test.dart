@@ -139,53 +139,53 @@ void main() {
       await tester.pumpAndSettle();
 
       // Header
-      expect(find.text('Small signs. Big wins.'), findsOneWidget);
+      expect(find.text('Tanda Kecil. Hasil Besar.'), findsOneWidget);
       expect(find.text('2 / 5'), findsOneWidget); // keep_learning + good
 
       // Badge Titles visible at top
-      expect(find.text('Keep learning'), findsWidgets);
-      expect(find.text('Good'), findsOneWidget);
-      expect(find.text('Excellent'), findsOneWidget);
+      expect(find.text('Terus Belajar'), findsWidgets);
+      expect(find.text('Bagus'), findsOneWidget);
+      expect(find.text('Luar Biasa'), findsOneWidget);
 
       // Status pills
-      expect(find.textContaining('Earned'), findsWidgets);
-      expect(find.text('Locked'), findsWidgets);
+      expect(find.textContaining('Diraih'), findsWidgets);
+      expect(find.text('Terkunci'), findsWidgets);
       // Tapping an unlocked badge opens details
-      await tester.tap(find.text('Good'));
+      await tester.tap(find.text('Bagus'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Your achievement'), findsOneWidget);
-      expect(find.text('BADGE UNLOCKED'), findsOneWidget);
-      expect(find.textContaining('A little practice'), findsOneWidget);
+      expect(find.text('Detail Pencapaian'), findsOneWidget);
+      expect(find.text('LENCANA TERBUKA'), findsOneWidget);
+      expect(find.textContaining('Latihan kecil. Pencapaian besar.'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Tutup'));
       await tester.pumpAndSettle();
 
       // Scroll down to check remaining badges
       await tester.scrollUntilVisible(
-        find.text('Perfect'),
+        find.text('Sempurna'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('Perfect'), findsOneWidget);
+      expect(find.text('Sempurna'), findsOneWidget);
 
       // Tapping a locked badge shows locked details
-      await tester.tap(find.text('Perfect'));
+      await tester.tap(find.text('Sempurna'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Badge details'), findsOneWidget);
-      expect(find.text('BADGE LOCKED'), findsOneWidget);
+      expect(find.text('Detail Lencana'), findsOneWidget);
+      expect(find.text('LENCANA TERKUNCI'), findsOneWidget);
       expect(find.textContaining('Tantangan Menanti'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Tutup'));
       await tester.pumpAndSettle();
 
       await tester.scrollUntilVisible(
-        find.text('Impossible'),
+        find.text('Mustahil'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('Impossible'), findsOneWidget);
+      expect(find.text('Mustahil'), findsOneWidget);
     });
   });
 
@@ -213,9 +213,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('My learning progress'), findsOneWidget);
-      expect(find.text('Your alphabet journey'), findsOneWidget);
-      expect(find.textContaining('letters learned'), findsOneWidget);
+      expect(find.text('Progres Belajar'), findsOneWidget);
+      expect(find.text('Perjalanan Alfabetmu'), findsOneWidget);
+      expect(find.textContaining('huruf dipelajari'), findsOneWidget);
 
       // Alphabet pills
       expect(find.text('A'), findsWidgets);
@@ -223,19 +223,19 @@ void main() {
       expect(find.text('Y'), findsOneWidget);
 
       // Streak card
-      expect(find.textContaining('streak'), findsWidgets);
+      expect(find.textContaining('Streak'), findsWidgets);
 
       // Scroll to badges section
       await tester.scrollUntilVisible(
-        find.text('Your badges'),
+        find.text('Lencana Pencapaian'),
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(find.text('Your badges'), findsOneWidget);
-      expect(find.textContaining('View all'), findsOneWidget);
+      expect(find.text('Lencana Pencapaian'), findsOneWidget);
+      expect(find.textContaining('Lihat semua'), findsOneWidget);
 
       // Tapping View all opens BadgesPage
-      await tester.tap(find.textContaining('View all'));
+      await tester.tap(find.textContaining('Lihat semua'));
       await tester.pumpAndSettle();
       expect(find.byType(BadgesPage), findsOneWidget);
     });
@@ -252,14 +252,14 @@ void main() {
       await tester.drag(find.byType(ListView), const Offset(0, -350));
       await tester.pumpAndSettle();
 
-      final gamificationCard = find.text('Progres Belajar & Badges');
+      final gamificationCard = find.text('Progres Belajar & Lencana');
       expect(gamificationCard, findsOneWidget);
 
       await tester.tap(gamificationCard);
       await tester.pumpAndSettle();
 
       expect(find.byType(LearningProgressPage), findsOneWidget);
-      expect(find.text('Your alphabet journey'), findsOneWidget);
+      expect(find.text('Perjalanan Alfabetmu'), findsOneWidget);
     });
 
     testWidgets('HomePage header badge icon opens LearningProgressPage', (
@@ -271,14 +271,14 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
-      final headerBadge = find.byTooltip('Progres Belajar & Badges');
+      final headerBadge = find.byTooltip('Progres Belajar & Lencana');
       expect(headerBadge, findsOneWidget);
 
       await tester.tap(headerBadge);
       await tester.pumpAndSettle();
 
       expect(find.byType(LearningProgressPage), findsOneWidget);
-      expect(find.text('Your alphabet journey'), findsOneWidget);
+      expect(find.text('Perjalanan Alfabetmu'), findsOneWidget);
     });
   });
 }

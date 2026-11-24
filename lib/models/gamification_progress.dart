@@ -70,10 +70,10 @@ class GamificationProgress {
   }
 
   String get learnedSummaryText {
-    if (practicedLetters.isEmpty) return 'No letters learned yet';
+    if (practicedLetters.isEmpty) return 'Belum ada huruf dipelajari';
     final sorted = practicedLetters.toList()..sort();
-    if (sorted.length == 1) return '${sorted.first} learned';
-    return '${sorted.first}–${sorted.last} learned';
+    if (sorted.length == 1) return 'Huruf ${sorted.first} dipelajari';
+    return 'Huruf ${sorted.first}–${sorted.last} dipelajari';
   }
 
   factory GamificationProgress.fromHistory(List<HistoryItem> history) {

@@ -26,7 +26,7 @@ class BadgesPage extends ConsumerWidget {
     final unlockedCount = progress.unlockedCount;
     final totalBadges = progress.totalBadgesCount;
     final remainingCount = totalBadges - unlockedCount;
-    final progressRatio = totalBadges == 0 ? 0.0 : unlockedCount / totalBadges;
+    final progressRatio = (unlockedCount / totalBadges).clamp(0.0, 1.0);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FC),
@@ -45,7 +45,7 @@ class BadgesPage extends ConsumerWidget {
               )
             : null,
         title: const Text(
-          'My badges',
+          'Lencana Saya',
           style: TextStyle(
             color: _ink,
             fontSize: 20,
@@ -71,7 +71,7 @@ class BadgesPage extends ConsumerWidget {
                     children: [
                       const Expanded(
                         child: Text(
-                          'Small signs. Big wins.',
+                          'Tanda Kecil. Hasil Besar.',
                           style: TextStyle(
                             color: _ink,
                             fontSize: 26,
@@ -102,7 +102,7 @@ class BadgesPage extends ConsumerWidget {
 
                   // Subtitle
                   const Text(
-                    'Meet your learning companions. Every badge celebrates a step forward.',
+                    'Kenali kawan belajarmu. Setiap lencana merayakan satu langkah maju.',
                     style: TextStyle(
                       color: _muted,
                       fontSize: 13.5,
@@ -127,8 +127,8 @@ class BadgesPage extends ConsumerWidget {
                   // Progress Summary
                   Text(
                     remainingCount > 0
-                        ? '$unlockedCount earned · $remainingCount more adventures ahead'
-                        : 'All $unlockedCount badges unlocked! Incredible achievement!',
+                        ? '$unlockedCount diraih · $remainingCount petualangan menanti'
+                        : 'Semua $unlockedCount lencana terbuka! Pencapaian luar biasa!',
                     style: const TextStyle(
                       color: _blue,
                       fontSize: 12,
@@ -152,11 +152,10 @@ class BadgesPage extends ConsumerWidget {
                           badge: badge,
                           progress: progress,
                           onContinueLearning: () {
-                            if (onContinueLearning != null) {
-                              onContinueLearning!();
-                            } else if (Navigator.canPop(context)) {
+                            if (Navigator.canPop(context)) {
                               Navigator.pop(context);
                             }
+                            onContinueLearning?.call();
                           },
                         );
                       },
@@ -173,7 +172,7 @@ class BadgesPage extends ConsumerWidget {
                           color: Color(0xFF2864F0), size: 16),
                       SizedBox(width: 6),
                       Text(
-                        'No rush. Every little practice counts.',
+                        'Santai saja. Setiap latihan kecil sangat berarti.',
                         style: TextStyle(
                           color: _muted,
                           fontSize: 12,
@@ -215,7 +214,7 @@ class BadgesPage extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        'Keep learning · Letters ${progress.nextLessonRange}',
+                        'Terus Belajar · Huruf ${progress.nextLessonRange}',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -368,7 +367,7 @@ class _StatusPill extends StatelessWidget {
                 size: 13, color: Color(0xFF7585A2)),
             SizedBox(width: 4),
             Text(
-              'Locked',
+              'Terkunci',
               style: TextStyle(
                 color: Color(0xFF7585A2),
                 fontSize: 11,
@@ -394,7 +393,7 @@ class _StatusPill extends StatelessWidget {
                 size: 13, color: Color(0xFF7D3EC0)),
             SizedBox(width: 4),
             Text(
-              'Earned · New',
+              'Diraih · Baru',
               style: TextStyle(
                 color: Color(0xFF7D3EC0),
                 fontSize: 11,
@@ -419,7 +418,7 @@ class _StatusPill extends StatelessWidget {
               size: 13, color: Color(0xFF00A879)),
           SizedBox(width: 4),
           Text(
-            'Earned',
+            'Diraih',
             style: TextStyle(
               color: Color(0xFF00A879),
               fontSize: 11,

@@ -120,7 +120,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                 ),
                 const Expanded(
                   child: Text(
-                    'Session complete',
+                    'Sesi Selesai',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: _ink,
@@ -152,7 +152,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
 
             // Main Heading
             const Text(
-              'Look how far you’ve come!',
+              'Lihat seberapa jauh kamu berkembang!',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: _ink,
@@ -223,7 +223,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '${lettersToShow.length} new letters learned',
+                        '${lettersToShow.length} huruf baru dipelajari',
                         style: const TextStyle(
                           color: _ink,
                           fontSize: 15,
@@ -291,7 +291,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Alphabet progress: $prevLettersCount → ${currentTotalLearned > 0 ? currentTotalLearned : lettersToShow.length} letters · $progressPercentage% complete',
+                    'Kemajuan alfabet: $prevLettersCount → ${currentTotalLearned > 0 ? currentTotalLearned : lettersToShow.length} huruf · $progressPercentage% selesai',
                     style: const TextStyle(
                       color: _muted,
                       fontSize: 12,
@@ -315,7 +315,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    isBadgeUnlocked ? 'NEW BADGE EARNED' : 'NEXT BADGE TO EARN',
+                    isBadgeUnlocked ? 'LENCANA BARU DIRAIH' : 'LENCANA BERIKUTNYA',
                     style: const TextStyle(
                       color: Color(0xFF7D3EC0),
                       fontSize: 11,
@@ -364,19 +364,21 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                                   onContinueLearning: widget.onContinue,
                                 );
                               },
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    'Meet your new badge',
-                                    style: TextStyle(
+                                    isBadgeUnlocked
+                                        ? 'Lihat lencana barumu'
+                                        : 'Lihat detail lencana',
+                                    style: const TextStyle(
                                       color: _blue,
                                       fontSize: 12.5,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  SizedBox(width: 4),
-                                  Icon(
+                                  const SizedBox(width: 4),
+                                  const Icon(
                                     Icons.arrow_forward_rounded,
                                     size: 14,
                                     color: _blue,
@@ -416,7 +418,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${progress.streakDays > 0 ? progress.streakDays : 5}-day streak. High five!',
+                          'Streak ${progress.streakDays > 0 ? progress.streakDays : 5} hari. Keren!',
                           style: const TextStyle(
                             color: _ink,
                             fontSize: 14.5,
@@ -425,7 +427,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${progress.totalXp > 0 ? progress.totalXp : 360} total XP · Your daily goal is complete.',
+                          'Total ${progress.totalXp > 0 ? progress.totalXp : 360} XP · Target harianmu tercapai.',
                           style: const TextStyle(
                             color: _muted,
                             fontSize: 12,
@@ -486,7 +488,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                     child: Column(
                       children: [
                         const Text(
-                          'Saran Kata AI Gemini (tap untuk pilih):',
+                          'Saran kata AI Gemini (ketuk untuk memilih):',
                           style: TextStyle(
                             color: _muted,
                             fontSize: 12,
@@ -549,7 +551,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'Continue learning',
+                      'Lanjut latihan',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
@@ -587,7 +589,7 @@ class _SessionCompleteSheetState extends ConsumerState<SessionCompleteSheet> {
                   }
                 },
                 child: const Text(
-                  'View my progress',
+                  'Lihat progres belajar',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                 ),
               ),
