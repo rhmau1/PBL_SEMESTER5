@@ -46,7 +46,7 @@ class AppBottomNav extends StatelessWidget {
               BottomNavigationBarItem(
                 icon: Icon(Icons.home_outlined),
                 activeIcon: _SelectedNavIcon(icon: Icons.home_outlined),
-                label: 'Home',
+                label: 'Beranda',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.center_focus_weak_rounded),

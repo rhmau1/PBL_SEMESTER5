@@ -39,6 +39,7 @@ class GamificationProgress {
 
   int get unlockedCount => unlockedBadges.length;
   int get totalBadgesCount => BadgeItem.allBadges.length;
+  int get totalLetters => 24;
 
   int get percentageLetters =>
       ((practicedLetters.length / 24) * 100).clamp(0, 100).round();
@@ -46,18 +47,48 @@ class GamificationProgress {
   bool isLetterPracticed(String letter) =>
       practicedLetters.contains(letter.toUpperCase());
 
+  static const supportedAlphabet = [
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M',
+    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y',
+  ];
+
+  static const lessonGroups = [
+    (range: 'A–E', letters: ['A', 'B', 'C', 'D', 'E']),
+    (range: 'F–I', letters: ['F', 'G', 'H', 'I']),
+    (range: 'K–O', letters: ['K', 'L', 'M', 'N', 'O']),
+    (range: 'P–T', letters: ['P', 'Q', 'R', 'S', 'T']),
+    (range: 'U–Y', letters: ['U', 'V', 'W', 'X', 'Y']),
+  ];
+
+  String get nextLessonRange {
+    for (final group in lessonGroups) {
+      if (group.letters.any((l) => !practicedLetters.contains(l))) {
+        return group.range;
+      }
+    }
+    return 'A–E';
+  }
+
+  String get learnedSummaryText {
+    if (practicedLetters.isEmpty) return 'Belum ada huruf dipelajari';
+    final sorted = practicedLetters.toList()..sort();
+    if (sorted.length == 1) return 'Huruf ${sorted.first} dipelajari';
+    return 'Huruf ${sorted.first}–${sorted.last} dipelajari';
+  }
+
   factory GamificationProgress.fromHistory(List<HistoryItem> history) {
     if (history.isEmpty) {
       return const GamificationProgress.empty();
     }
 
     final letters = <String>{};
-    final letterRegex = RegExp(r'[A-Za-z]');
+    final supportedSet = supportedAlphabet.toSet();
 
     for (final item in history) {
       for (final char in item.gesture.split('')) {
-        if (letterRegex.hasMatch(char)) {
-          letters.add(char.toUpperCase());
+        final upper = char.toUpperCase();
+        if (supportedSet.contains(upper)) {
+          letters.add(upper);
         }
       }
     }

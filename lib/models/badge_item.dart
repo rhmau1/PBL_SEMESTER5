@@ -43,24 +43,24 @@ class BadgeItem {
   String progressText(GamificationProgress progress) {
     if (isUnlocked(progress)) {
       return switch (tier) {
-        BadgeTier.keepLearning => 'First lesson completed',
-        BadgeTier.good => '5-letter milestone reached',
-        BadgeTier.excellent => '15-letter milestone reached',
-        BadgeTier.perfect => 'All 24 letters mastered',
-        BadgeTier.impossible => 'All letters + 7-day streak achieved',
+        BadgeTier.keepLearning => 'Sesi pertama selesai',
+        BadgeTier.good => 'Pencapaian 5 huruf tercapai',
+        BadgeTier.excellent => 'Pencapaian 15 huruf tercapai',
+        BadgeTier.perfect => 'Seluruh 24 huruf dikuasai',
+        BadgeTier.impossible => 'Semua huruf + streak 7 hari tercapai',
       };
     }
 
     final letterCount = progress.practicedLetters.length;
     return switch (tier) {
-      BadgeTier.keepLearning => '0 / 1 session completed',
-      BadgeTier.good => '$letterCount / 5 letters · ${5 - letterCount} to go',
+      BadgeTier.keepLearning => '0 / 1 sesi selesai',
+      BadgeTier.good => '$letterCount / 5 huruf · sisa ${5 - letterCount}',
       BadgeTier.excellent =>
-        '$letterCount / 15 letters · ${15 - letterCount} to go',
+        '$letterCount / 15 huruf · sisa ${15 - letterCount}',
       BadgeTier.perfect =>
-        '$letterCount / 24 letters · ${24 - letterCount} to go',
+        '$letterCount / 24 huruf · sisa ${24 - letterCount}',
       BadgeTier.impossible =>
-        '$letterCount / 24 letters · ${progress.streakDays} / 7 days',
+        '$letterCount / 24 huruf · ${progress.streakDays} / 7 hari',
     };
   }
 
@@ -68,49 +68,48 @@ class BadgeItem {
     BadgeItem(
       tier: BadgeTier.keepLearning,
       id: 'keep_learning',
-      title: 'Keep learning',
-      requirement: 'Complete your first lesson.',
-      description:
-          'Awal yang bagus! Kamu telah menyelesaikan sesi latihan pertamamu.',
+      title: 'Terus Belajar',
+      requirement: 'Selesaikan sesi latihan pertamamu.',
+      description: 'Selesaikan sesi latihan pertamamu.',
       assetPath: 'assets/badges/keep_learning.svg',
     ),
     BadgeItem(
       tier: BadgeTier.good,
       id: 'good',
-      title: 'Good',
-      requirement: 'Learn 5 alphabet letters.',
+      title: 'Bagus',
+      requirement: 'Pelajari 5 huruf alfabet.',
       description:
-          'Hebat! Kamu sudah mencoba 5 huruf alfabet berbeda.',
+          'Kamu telah mempelajari 5 huruf alfabet. Selangkah lebih dekat untuk berkomunikasi dengan lancar.',
       assetPath: 'assets/badges/good.svg',
       targetLetters: 5,
     ),
     BadgeItem(
       tier: BadgeTier.excellent,
       id: 'excellent',
-      title: 'Excellent',
-      requirement: 'Learn 15 alphabet letters.',
+      title: 'Luar Biasa',
+      requirement: 'Pelajari 15 huruf alfabet.',
       description:
-          'Luar biasa! Kamu telah mempelajari 15 huruf alfabet. Itu 15 cara baru untuk terkoneksi.',
+          'Kamu telah mempelajari 15 huruf alfabet. Itu 15 cara baru untuk terhubung.',
       assetPath: 'assets/badges/excellent.svg',
       targetLetters: 15,
     ),
     BadgeItem(
       tier: BadgeTier.perfect,
       id: 'perfect',
-      title: 'Perfect',
-      requirement: 'Learn all 24 alphabet letters.',
+      title: 'Sempurna',
+      requirement: 'Kuasai seluruh 24 huruf alfabet.',
       description:
-          'Sempurna! Kamu telah melatih seluruh 24 huruf yang tersedia pada sistem.',
+          'Kamu telah mempelajari seluruh 24 huruf alfabet. Dedikasi dan penguasaan sejati!',
       assetPath: 'assets/badges/perfect.svg',
       targetLetters: 24,
     ),
     BadgeItem(
       tier: BadgeTier.impossible,
       id: 'impossible',
-      title: 'Impossible',
-      requirement: 'Learn all 24 letters + reach a 7-day streak.',
+      title: 'Mustahil',
+      requirement: 'Kuasai seluruh 24 huruf + streak 7 hari.',
       description:
-          'Pencapaian legendaris! Kamu menguasai seluruh huruf dan konsisten berlatih selama 7 hari.',
+          'Kamu telah menguasai seluruh 24 huruf dan mempertahankan streak 7 hari. Sungguh pencapaian legendaris!',
       assetPath: 'assets/badges/impossible.svg',
       targetLetters: 24,
       targetStreak: 7,
